@@ -62,7 +62,11 @@ export function styleFromName(name: string) {
 
 export async function extractPageItems(pdf: PDFDocumentProxy, pageIndex: number): Promise<TextItemInfo[]> {
   const page = await pdf.getPage(pageIndex + 1);
+  const pdfjs = await getPdfjs();
   const tc = await page.getTextContent();
+  // Parsing the content stream both yields exact fill colours and makes PDF.js
+  // register the real font objects, so bold/italic are known right away.
+  const runs = await collectDrawnRuns(page, pdfjs.OPS as unknown as Record<string, number>);
   const out: TextItemInfo[] = [];
   tc.items.forEach((raw, i) => {
     if (!("str" in raw)) return;
@@ -71,6 +75,7 @@ export async function extractPageItems(pdf: PDFDocumentProxy, pageIndex: number)
     const size = Math.hypot(t[2], t[3]) || Math.hypot(t[0], t[1]);
     const css = tc.styles[raw.fontName]?.fontFamily;
     const s = styleFromName(raw.fontName);
+    const run = runs.get(runKey(t[4], t[5]));
     out.push({
       id: `p${pageIndex}-i${i}`,
       page: pageIndex,
@@ -84,10 +89,11 @@ export async function extractPageItems(pdf: PDFDocumentProxy, pageIndex: number)
       family: familyFromName(raw.fontName, css),
       bold: s.bold,
       italic: s.italic,
+      color: run?.color,
       source: "native",
     });
   });
-  return out;
+  return refineFonts(page, out);
 }
 
 /** After a page is rendered, PDF.js has the real font objects; use them to refine family/bold/italic. */

@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { FontFamily, TextItemInfo } from "./types";
+import { collectDrawnRuns, runKey } from "./ops";
 
 let libPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 

@@ -119,7 +119,12 @@ export function Editor() {
   };
 
   const onRefined = useCallback((page: number, refined: TextItemInfo[]) => {
-    setItems((prev) => ({ ...prev, [page]: refined }));
+    setItems((prev) => {
+      const existing = prev[page] ?? [];
+      // never let an empty or partial refine wipe already-extracted text
+      if (refined.length === 0 || refined.length < existing.length) return prev;
+      return { ...prev, [page]: refined };
+    });
   }, []);
 
   const goTo = (i: number) => pageEls.current[i]?.scrollIntoView({ behavior: "smooth", block: "start" });

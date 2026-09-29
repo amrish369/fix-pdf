@@ -80,11 +80,13 @@ export function PageView(p: Props) {
 
   const clickItem = (it: TextItemInfo) => {
     if (!vt || !canvasRef.current) return;
-    const { color, bg } = sampleColors(canvasRef.current, dprRef.current, vt, it);
+    const sampled = sampleColors(canvasRef.current, dprRef.current, vt, it);
+    // exact colour from the PDF content stream wins over antialiased pixel sampling
+    const color = it.color ?? sampled.color;
     p.onCreateEdit({
       id: it.id, page: it.page, text: it.str,
       style: { size: it.size, color, bold: it.bold, italic: it.italic, family: it.family, align: "left" },
-      bg, x: it.x, y: it.y, angle: it.angle, width: it.width, original: it, isNew: false, pristine: true,
+      bg: sampled.bg, x: it.x, y: it.y, angle: it.angle, width: it.width, original: it, isNew: false, pristine: true,
     });
   };
 

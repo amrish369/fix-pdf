@@ -62,7 +62,7 @@ export function PageView(p: Props) {
       canvas.width = Math.floor(vp.width * dpr);
       canvas.height = Math.floor(vp.height * dpr);
       const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-      task = page.render({ canvasContext: ctx, canvas, viewport: vp, transform: [dpr, 0, 0, dpr, 0, 0] });
+      task = page.render({ canvasContext: ctx, viewport: vp, transform: [dpr, 0, 0, dpr, 0, 0] });
       try { await task.promise; } catch { return; }
       if (cancelled) return;
       setVt(vp.transform);
@@ -233,7 +233,7 @@ export function Thumb({ pdf, pageIndex, active, onClick }: { pdf: PDFDocumentPro
       const c = ref.current;
       if (!c) return;
       c.width = vp.width; c.height = vp.height;
-      task = page.render({ canvasContext: c.getContext("2d")!, canvas: c, viewport: vp });
+      task = page.render({ canvasContext: c.getContext("2d")!, viewport: vp });
       await task.promise.catch(() => {});
     })();
     return () => task?.cancel();

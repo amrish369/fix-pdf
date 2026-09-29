@@ -73,7 +73,7 @@ export async function samplePageItems(pdf: PDFDocumentProxy, pageIndex: number, 
   canvas.width = Math.floor(vp.width);
   canvas.height = Math.floor(vp.height);
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-  await page.render({ canvasContext: ctx, canvas, viewport: vp }).promise;
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
   const refined = refineFonts(page, items);
   const res = new Map<string, { item: TextItemInfo; color: string; bg: string }>();
   refined.forEach((it) => res.set(it.id, { item: it, ...sampleColors(canvas, 1, vp.transform, it) }));

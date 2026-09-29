@@ -22,7 +22,7 @@ export async function ocrPage(
   const canvas = document.createElement("canvas");
   canvas.width = Math.floor(vp.width);
   canvas.height = Math.floor(vp.height);
-  await page.render({ canvasContext: canvas.getContext("2d")!, canvas, viewport: vp }).promise;
+  await page.render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
 
   const { createWorker } = await import("tesseract.js");
   const worker = await createWorker("eng", 1, {

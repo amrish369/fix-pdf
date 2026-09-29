@@ -68,7 +68,17 @@ export function Editor() {
       const all: Record<number, TextItemInfo[]> = {};
       for (let i = 0; i < doc.numPages; i++) {
         all[i] = await extractPageItems(doc, i).catch(() => []);
-        if (i % 5 === 4 || i === doc.numPages - 1) setItems({ ...all });
+        if (i % 5 === 4 || i === doc.numPages - 1) {
+          setItems((prev) => {
+            const next = { ...prev };
+            // merge, so pages already refined after rendering are not reset
+            for (const [k, v] of Object.entries(all)) {
+              const n = Number(k);
+              if ((prev[n]?.length ?? 0) !== v.length) next[n] = v;
+            }
+            return next;
+          });
+        }
       }
       setScanned(isLikelyScanned(all, doc.numPages));
     } catch (e) {

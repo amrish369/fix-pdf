@@ -15,6 +15,7 @@ export interface TextItemInfo {
   family: FontFamily;
   bold: boolean;
   italic: boolean;
+  color?: string; // exact fill colour from the PDF content stream, when known
   source: "native" | "ocr";
 }
 

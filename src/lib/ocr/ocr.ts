@@ -40,7 +40,7 @@ export async function ocrPage(
           const text = line.text.trim();
           if (!text) continue;
           const { x0, y1, x1 } = line.bbox;
-          const hPx = (line.rowAttributes?.row_height ?? line.bbox.y1 - line.bbox.y0) * 0.8;
+          const hPx = (line.rowAttributes?.rowHeight ?? line.bbox.y1 - line.bbox.y0) * 0.8;
           const baselineY = line.baseline?.y0 ?? y1;
           const [px, py] = vp.convertToPdfPoint(x0, baselineY);
           items.push({

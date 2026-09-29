@@ -65,66 +65,66 @@ export async function collectDrawnRuns(
     const fn = ops.fnArray[i];
     const a = ops.argsArray[i] as number[];
     switch (fn) {
-      case OPS.save:
+      case OPS["save"]:
         stack.push({ ctm, color });
         break;
-      case OPS.restore: {
+      case OPS["restore"]: {
         const s = stack.pop();
         if (s) { ctm = s.ctm; color = s.color; }
         break;
       }
-      case OPS.transform:
+      case OPS["transform"]:
         ctm = mul([a[0], a[1], a[2], a[3], a[4], a[5]], ctm);
         break;
-      case OPS.setFillRGBColor:
+      case OPS["setFillRGBColor"]:
         color = hex(a[0], a[1], a[2]);
         break;
-      case OPS.setFillGray:
+      case OPS["setFillGray"]:
         color = hex(a[0] * 255, a[0] * 255, a[0] * 255);
         break;
-      case OPS.setFillCMYKColor: {
+      case OPS["setFillCMYKColor"]: {
         const [c, m, y, k] = a;
         color = hex(255 * (1 - c) * (1 - k), 255 * (1 - m) * (1 - k), 255 * (1 - y) * (1 - k));
         break;
       }
-      case OPS.setFont:
+      case OPS["setFont"]:
         fontName = String(a[0]);
         fontSize = Math.abs(Number(a[1])) || fontSize;
         break;
-      case OPS.setLeading:
+      case OPS["setLeading"]:
         leading = a[0];
         break;
-      case OPS.setLeadingMoveText:
+      case OPS["setLeadingMoveText"]:
         leading = -a[1];
         tlm = mul([1, 0, 0, 1, a[0], a[1]], tlm);
         tm = tlm;
         break;
-      case OPS.beginText:
+      case OPS["beginText"]:
         tm = [1, 0, 0, 1, 0, 0];
         tlm = tm;
         break;
-      case OPS.setTextMatrix:
+      case OPS["setTextMatrix"]:
         tm = [a[0], a[1], a[2], a[3], a[4], a[5]];
         tlm = tm;
         break;
-      case OPS.moveText:
+      case OPS["moveText"]:
         tlm = mul([1, 0, 0, 1, a[0], a[1]], tlm);
         tm = tlm;
         break;
-      case OPS.nextLine:
+      case OPS["nextLine"]:
         tlm = mul([1, 0, 0, 1, 0, -leading], tlm);
         tm = tlm;
         break;
-      case OPS.showText:
-      case OPS.showSpacedText:
+      case OPS["showText"]:
+      case OPS["showSpacedText"]:
         record();
         break;
-      case OPS.nextLineShowText:
+      case OPS["nextLineShowText"]:
         tlm = mul([1, 0, 0, 1, 0, -leading], tlm);
         tm = tlm;
         record();
         break;
-      case OPS.nextLineSetSpacingShowText:
+      case OPS["nextLineSetSpacingShowText"]:
         tlm = mul([1, 0, 0, 1, 0, -leading], tlm);
         tm = tlm;
         record();

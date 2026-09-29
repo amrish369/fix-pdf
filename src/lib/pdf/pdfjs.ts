@@ -90,7 +90,7 @@ export async function extractPageItems(pdf: PDFDocumentProxy, pageIndex: number)
       family: familyFromName(raw.fontName, css),
       bold: s.bold,
       italic: s.italic,
-      color: run?.color,
+      ...(run?.color ? { color: run.color } : {}),
       source: "native",
     });
   });

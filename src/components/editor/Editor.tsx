@@ -10,6 +10,7 @@ import { isLikelyScanned, ocrPage } from "@/lib/ocr/ocr";
 import type { Edit, Edits, TextItemInfo, TextStyle } from "@/lib/pdf/types";
 import { PageView, Thumb } from "./PageView";
 
+type Patch = Omit<Partial<Edit>, "style"> & { style?: Partial<TextStyle> };
 type H = { past: Edits[]; present: Edits; future: Edits[] };
 type A = { type: "apply"; edits: Edits; record: boolean } | { type: "undo" } | { type: "redo" } | { type: "reset" };
 function hist(s: H, a: A): H {
@@ -47,7 +48,7 @@ export function Editor() {
   const editsRef = useRef(edits);
   editsRef.current = edits;
 
-  useEffect(() => () => { void pdf?.destroy(); }, [pdf]);
+  useEffect(() => () => { void pdf?.loadingTask.destroy(); }, [pdf]);
 
   const openFile = async (file: File) => {
     setError(null);
@@ -97,7 +98,7 @@ export function Editor() {
     if (e.isNew) setMode("edit");
   }, []);
 
-  const updateEdit = useCallback((id: string, patch: Partial<Edit> & { style?: Partial<TextStyle> }) => {
+  const updateEdit = useCallback((id: string, patch: Patch) => {
     const cur = editsRef.current[id];
     if (!cur) return;
     const next: Edit = { ...cur, ...patch, style: { ...cur.style, ...(patch.style ?? {}) }, pristine: false };
@@ -273,7 +274,7 @@ function Landing({ onFile, onPick }: { onFile: (f: File) => void; onPick: () => 
   );
 }
 
-function Props({ e, onChange, onRemove, onClose }: { e: Edit; onChange: (p: Partial<Edit> & { style?: Partial<TextStyle> }) => void; onRemove: () => void; onClose: () => void }) {
+function Props({ e, onChange, onRemove, onClose }: { e: Edit; onChange: (p: Patch) => void; onRemove: () => void; onClose: () => void }) {
   const [text, setText] = useState(e.text);
   useEffect(() => setText(e.text), [e.text, e.id]);
   const lbl = "mb-1 block text-xs font-medium text-muted-foreground";
@@ -343,7 +344,7 @@ function FindReplace({ pdf, items, edits, onApply, onJump, onClose, setBusy }: {
   const [rep, setRep] = useState("");
   const [cs, setCs] = useState(false);
   const re = find ? new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), cs ? "g" : "gi") : null;
-  const matches: { id: string; page: number; text: string; item?: TextItemInfo }[] = [];
+  const matches: { id: string; page: number; text: string; item?: TextItemInfo | undefined }[] = [];
   if (re) {
     Object.values(items).flat().forEach((it) => {
       const cur = edits[it.id] && !edits[it.id].pristine ? edits[it.id].text : it.str;

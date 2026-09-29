@@ -23,7 +23,6 @@ export async function loadPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
   const pdfjs = await getPdfjs();
   const task = pdfjs.getDocument({
     data: bytes.slice(), // worker takes ownership of the buffer
-    isEvalSupported: false,
     enableXfa: false,
     stopAtErrors: false,
   });

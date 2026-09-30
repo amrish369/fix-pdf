@@ -46,12 +46,27 @@ export async function exportPdf(original: Uint8Array, edits: Edits): Promise<Uin
     const rot = degrees((e.angle * 180) / Math.PI);
     const at = (dx: number, dy: number) => ({ x: e.x + dx * c - dy * s, y: e.y + dx * s + dy * c });
 
+    // 0. Eraser / whiteout: a plain rectangle filled with the surrounding background colour.
+    if (e.kind === "erase") {
+      page.drawRectangle({ x: e.x, y: e.y, width: e.rectW ?? 0, height: e.rectH ?? 0, color: toRgb(e.bg) });
+      continue;
+    }
     // 1. Cover the original glyphs with the sampled background color.
-    if (!e.isNew && e.original) {
-      const osz = e.original.size;
-      const pad = osz * 0.06;
-      const o = at(-pad, -osz * 0.28);
-      page.drawRectangle({ ...o, width: e.width + pad * 2, height: osz * 1.24, rotate: rot, color: toRgb(e.bg) });
+    const covers = e.covers ?? (e.original ? [{ x: e.x, y: e.y, size: e.original.size, angle: e.angle, width: e.width }] : []);
+    if (!e.isNew) {
+      for (const cv of covers) {
+        const cc = Math.cos(cv.angle), cs = Math.sin(cv.angle);
+        const pad = cv.size * 0.06;
+        const dx = -pad, dy = -cv.size * 0.28;
+        page.drawRectangle({
+          x: cv.x + dx * cc - dy * cs,
+          y: cv.y + dx * cs + dy * cc,
+          width: cv.width + pad * 2,
+          height: cv.size * 1.24,
+          rotate: degrees((cv.angle * 180) / Math.PI),
+          color: toRgb(e.bg),
+        });
+      }
     }
     // 2. Draw replacement text with matched font/size/color/position.
     if (!e.text) continue;

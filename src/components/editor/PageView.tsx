@@ -1,15 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { apply, invert, screenBox, type Mat } from "@/lib/pdf/geometry";
 import { refineFonts } from "@/lib/pdf/pdfjs";
-import { sampleColors } from "@/lib/pdf/colors";
-import type { Edit, Edits, TextItemInfo } from "@/lib/pdf/types";
+import { sampleColors, sampleRectBg } from "@/lib/pdf/colors";
+import type { CoverRect, Edit, Edits, TextItemInfo } from "@/lib/pdf/types";
 
 export const CSS_FONT = {
   sans: "Helvetica, Arial, 'Liberation Sans', sans-serif",
   serif: "'Times New Roman', Times, 'Liberation Serif', serif",
   mono: "'Courier New', Courier, 'Liberation Mono', monospace",
 } as const;
+
+export type Mode = "edit" | "add" | "select" | "erase";
+
+export interface PageApi {
+  selectItem: (id: string) => void;
+}
 
 interface Props {
   pdf: PDFDocumentProxy;
@@ -19,22 +25,30 @@ interface Props {
   items: TextItemInfo[];
   edits: Edits;
   selectedId: string | null;
-  mode: "edit" | "add";
+  mode: Mode;
   onCreateEdit: (edit: Edit) => void;
   onSelect: (id: string | null) => void;
   onCommitText: (id: string, text: string) => void;
   onItemsRefined: (page: number, items: TextItemInfo[]) => void;
   onVisible: (page: number) => void;
+  onTab: (id: string, back: boolean) => void;
   registerEl: (page: number, el: HTMLDivElement | null) => void;
+  registerApi: (page: number, api: PageApi | null) => void;
 }
 
 export function PageView(p: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
   const [vt, setVt] = useState<Mat | null>(null);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const refinedRef = useRef(false);
   const dprRef = useRef(1);
+  const itemsRef = useRef(p.items);
+  itemsRef.current = p.items;
+  const vtRef = useRef<Mat | null>(null);
+  vtRef.current = vt;
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -66,43 +80,144 @@ export function PageView(p: Props) {
       try { await task.promise; } catch { return; }
       if (cancelled) return;
       setVt(vp.transform);
-      if (!refinedRef.current) {
+      const current = itemsRef.current;
+      if (!refinedRef.current && current.length) {
         refinedRef.current = true;
-        p.onItemsRefined(p.pageIndex, refineFonts(page, p.items));
+        p.onItemsRefined(p.pageIndex, refineFonts(page, current));
       }
     })();
     return () => { cancelled = true; task?.cancel(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [near, p.scale, p.pdf, p.pageIndex]);
+  }, [near, p.scale, p.pdf, p.pageIndex, p.items.length]);
 
   const pageEdits = Object.values(p.edits).filter((e) => e.page === p.pageIndex);
-  const editedIds = new Set(pageEdits.map((e) => e.id));
+  const hiddenIds = new Set<string>();
+  pageEdits.forEach((e) => {
+    hiddenIds.add(e.id);
+    e.memberIds?.forEach((m) => hiddenIds.add(m));
+  });
 
-  const clickItem = (it: TextItemInfo) => {
-    if (!vt || !canvasRef.current) return;
-    const sampled = sampleColors(canvasRef.current, dprRef.current, vt, it);
-    // exact colour from the PDF content stream wins over antialiased pixel sampling
-    const color = it.color ?? sampled.color;
-    p.onCreateEdit({
-      id: it.id, page: it.page, text: it.str,
-      style: { size: it.size, color, bold: it.bold, italic: it.italic, family: it.family, align: "left" },
-      bg: sampled.bg, x: it.x, y: it.y, angle: it.angle, width: it.width, original: it, isNew: false, pristine: true,
+  const editFromItems = useCallback((list: TextItemInfo[]) => {
+    const vtx = vtRef.current;
+    if (!vtx || !canvasRef.current || !list.length) return;
+    const ordered = [...list].sort((a, b) => (Math.abs(a.y - b.y) > 1.2 ? b.y - a.y : a.x - b.x));
+    const head = ordered[0];
+    const sampled = sampleColors(canvasRef.current, dprRef.current, vtx, head);
+    const color = head.color ?? sampled.color;
+    const firstLine = ordered.filter((it) => Math.abs(it.y - head.y) <= head.size * 0.5);
+    const lineWidth = Math.max(...firstLine.map((it) => it.x + it.width - head.x));
+    const covers: CoverRect[] = ordered.map((it) => ({ x: it.x, y: it.y, size: it.size, angle: it.angle, width: it.width }));
+    let text = "";
+    ordered.forEach((it, i) => {
+      if (i === 0) { text = it.str; return; }
+      const prev = ordered[i - 1];
+      const sameLine = Math.abs(it.y - prev.y) <= prev.size * 0.5;
+      const gap = it.x - (prev.x + prev.width);
+      text += sameLine && gap <= prev.size * 0.12 ? it.str : " " + it.str;
     });
-  };
-
-  const clickBlank = (ev: React.MouseEvent<HTMLDivElement>) => {
-    if (ev.target !== ev.currentTarget) return;
-    if (p.mode !== "add" || !vt) { p.onSelect(null); return; }
-    const r = ev.currentTarget.getBoundingClientRect();
-    const [x, y] = apply(invert(vt), ev.clientX - r.left, ev.clientY - r.top);
     p.onCreateEdit({
-      id: `new-${Date.now()}`, page: p.pageIndex, text: "New text",
+      id: ordered.length > 1 ? `sel-${head.id}-${ordered.length}` : head.id,
+      page: p.pageIndex,
+      kind: "text",
+      text,
+      style: { size: head.size, color, bold: head.bold, italic: head.italic, family: head.family, align: "left" },
+      bg: sampled.bg,
+      x: head.x, y: head.y, angle: head.angle, width: lineWidth,
+      original: head,
+      covers,
+      memberIds: ordered.map((it) => it.id),
+      isNew: false,
+      pristine: true,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.pageIndex, p.onCreateEdit]);
+
+  useEffect(() => {
+    const api: PageApi = {
+      selectItem: (id) => {
+        const it = itemsRef.current.find((i) => i.id === id);
+        if (it) editFromItems([it]);
+      },
+    };
+    p.registerApi(p.pageIndex, api);
+    return () => p.registerApi(p.pageIndex, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.pageIndex, editFromItems]);
+
+  const addTextAt = (clientX: number, clientY: number) => {
+    const el = overlayRef.current;
+    if (!vt || !el) return;
+    const r = el.getBoundingClientRect();
+    const [x, y] = apply(invert(vt), clientX - r.left, clientY - r.top);
+    p.onCreateEdit({
+      id: `new-${Date.now()}`, page: p.pageIndex, kind: "text", text: "New text",
       style: { size: 14, color: "#111111", bold: false, italic: false, family: "sans", align: "left" },
       bg: "#ffffff", x, y, angle: 0, width: 0, isNew: true,
     });
   };
 
+  // ---- marquee: drag to select several text runs, or to erase an area ----
+  const dragging = useRef(false);
+  const startPt = useRef<{ x: number; y: number } | null>(null);
+
+  const onPointerDown = (ev: React.PointerEvent<HTMLDivElement>) => {
+    if (p.mode !== "select" && p.mode !== "erase") return;
+    if (ev.button !== 0 && ev.pointerType === "mouse") return;
+    const r = ev.currentTarget.getBoundingClientRect();
+    startPt.current = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+    dragging.current = true;
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+  };
+
+  const onPointerMove = (ev: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current || !startPt.current) return;
+    const r = ev.currentTarget.getBoundingClientRect();
+    setMarquee({ x0: startPt.current.x, y0: startPt.current.y, x1: ev.clientX - r.left, y1: ev.clientY - r.top });
+  };
+
+  const onPointerUp = () => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    const m = marquee;
+    startPt.current = null;
+    setMarquee(null);
+    if (!m || !vt) return;
+    const left = Math.min(m.x0, m.x1), top = Math.min(m.y0, m.y1);
+    const width = Math.abs(m.x1 - m.x0), height = Math.abs(m.y1 - m.y0);
+    if (width < 6 || height < 6) return;
+
+    if (p.mode === "erase") {
+      const inv = invert(vt);
+      const [ax, ay] = apply(inv, left, top);
+      const [bx, by] = apply(inv, left + width, top + height);
+      const bg = canvasRef.current ? sampleRectBg(canvasRef.current, dprRef.current, { left, top, width, height }) : "#ffffff";
+      p.onCreateEdit({
+        id: `erase-${Date.now()}`, page: p.pageIndex, kind: "erase", text: "",
+        style: { size: 12, color: "#000000", bold: false, italic: false, family: "sans", align: "left" },
+        bg, x: Math.min(ax, bx), y: Math.min(ay, by), angle: 0, width: 0,
+        rectW: Math.abs(bx - ax), rectH: Math.abs(by - ay), isNew: true,
+      });
+      return;
+    }
+
+    const picked = p.items.filter((it) => {
+      if (hiddenIds.has(it.id)) return false;
+      const b = screenBox(vt, it);
+      const r2 = { l: b.left, t: b.top, r: b.left + Math.max(b.width, 4), b: b.top + b.height };
+      return r2.l < left + width && r2.r > left && r2.t < top + height && r2.b > top;
+    });
+    if (picked.length) editFromItems(picked);
+  };
+
+  const clickBlank = (ev: React.MouseEvent<HTMLDivElement>) => {
+    if (ev.target !== ev.currentTarget) return;
+    if (p.mode === "add" && vt) { addTextAt(ev.clientX, ev.clientY); return; }
+    if (p.mode === "edit") p.onSelect(null);
+  };
+
   const w = p.baseSize.w * p.scale, h = p.baseSize.h * p.scale;
+  const cursor = p.mode === "add" ? "cursor-crosshair" : p.mode === "select" || p.mode === "erase" ? "cursor-crosshair touch-none" : "";
   return (
     <div
       ref={wrapRef}
@@ -112,8 +227,16 @@ export function PageView(p: Props) {
     >
       <canvas ref={canvasRef} className="absolute inset-0" style={{ width: w, height: h }} />
       {!vt && <div className="absolute inset-0 grid place-items-center text-sm text-muted-foreground">Loading page {p.pageIndex + 1}…</div>}
-      <div className={`absolute inset-0 ${p.mode === "add" ? "cursor-crosshair" : ""}`} onClick={clickBlank}>
-        {vt && p.items.filter((it) => !editedIds.has(it.id)).map((it) => {
+      <div
+        ref={overlayRef}
+        className={`absolute inset-0 ${cursor}`}
+        onClick={clickBlank}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        {vt && p.mode !== "erase" && p.items.filter((it) => !hiddenIds.has(it.id)).map((it) => {
           const b = screenBox(vt, it);
           return (
             <button
@@ -121,8 +244,8 @@ export function PageView(p: Props) {
               type="button"
               aria-label={`Edit text: ${it.str}`}
               title={it.str}
-              onClick={(e) => { e.stopPropagation(); clickItem(it); }}
-              className={`absolute cursor-text rounded-[2px] hover:bg-primary/10 hover:outline hover:outline-1 hover:outline-primary ${it.source === "ocr" ? "outline outline-1 outline-dashed outline-primary/40" : ""}`}
+              onClick={(e) => { e.stopPropagation(); if (p.mode === "edit") editFromItems([it]); }}
+              className={`absolute rounded-[2px] hover:bg-primary/10 hover:outline hover:outline-1 hover:outline-primary ${p.mode === "select" ? "pointer-events-none" : "cursor-text"} ${it.source === "ocr" ? "outline outline-1 outline-dashed outline-primary/40" : ""}`}
               style={{
                 left: b.left, top: b.top, width: Math.max(b.width, 4), height: b.height,
                 transform: `rotate(${b.angle}rad)`, transformOrigin: `0 ${b.ascent}px`,
@@ -131,18 +254,28 @@ export function PageView(p: Props) {
           );
         })}
         {vt && pageEdits.map((e) => (
-          <EditBox key={e.id} e={e} vt={vt} selected={p.selectedId === e.id} onSelect={p.onSelect} onCommit={p.onCommitText} />
+          <EditBox key={e.id} e={e} vt={vt} selected={p.selectedId === e.id} onSelect={p.onSelect} onCommit={p.onCommitText} onTab={p.onTab} />
         ))}
+        {marquee && (
+          <div
+            className="pointer-events-none absolute border-2 border-primary bg-primary/15"
+            style={{
+              left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1),
+              width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0),
+            }}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function EditBox({ e, vt, selected, onSelect, onCommit }: {
+function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
   e: Edit; vt: Mat; selected: boolean; onSelect: (id: string) => void; onCommit: (id: string, t: string) => void;
+  onTab: (id: string, back: boolean) => void;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const cover = e.original ? screenBox(vt, e.original) : null;
+  const covers = e.kind === "erase" ? [] : (e.covers ?? (e.original ? [{ x: e.x, y: e.y, size: e.original.size, angle: e.angle, width: e.width }] : []));
   const b = screenBox(vt, { x: e.x, y: e.y, size: e.style.size, angle: e.angle, width: e.width });
 
   useEffect(() => {
@@ -162,6 +295,18 @@ function EditBox({ e, vt, selected, onSelect, onCommit }: {
     if (selected && ref.current && document.activeElement !== ref.current) ref.current.innerText = e.text;
   }, [e.text, selected]);
 
+  if (e.kind === "erase") {
+    const [sx, sy] = apply(vt, e.x, e.y + (e.rectH ?? 0));
+    const [ex, ey] = apply(vt, e.x + (e.rectW ?? 0), e.y);
+    return (
+      <div
+        className={`absolute ${selected ? "outline outline-2 outline-primary" : "hover:outline hover:outline-1 hover:outline-primary"}`}
+        style={{ left: sx, top: sy, width: ex - sx, height: ey - sy, background: e.bg }}
+        onClick={(ev) => { ev.stopPropagation(); onSelect(e.id); }}
+      />
+    );
+  }
+
   const align = e.style.align;
   const textStyle: React.CSSProperties = {
     fontFamily: CSS_FONT[e.style.family],
@@ -178,15 +323,19 @@ function EditBox({ e, vt, selected, onSelect, onCommit }: {
   };
   return (
     <>
-      {cover && (
-        <div
-          className="pointer-events-none absolute"
-          style={{
-            left: cover.left - cover.fontH * 0.06, top: cover.top, width: cover.width + cover.fontH * 0.12, height: cover.height,
-            background: e.bg, transform: `rotate(${cover.angle}rad)`, transformOrigin: `${cover.fontH * 0.06}px ${cover.ascent}px`,
-          }}
-        />
-      )}
+      {covers.map((cv, i) => {
+        const cb = screenBox(vt, cv);
+        return (
+          <div
+            key={i}
+            className="pointer-events-none absolute"
+            style={{
+              left: cb.left - cb.fontH * 0.06, top: cb.top, width: cb.width + cb.fontH * 0.12, height: cb.height,
+              background: e.bg, transform: `rotate(${cb.angle}rad)`, transformOrigin: `${cb.fontH * 0.06}px ${cb.ascent}px`,
+            }}
+          />
+        );
+      })}
       <div
         className={`absolute ${selected ? "z-10 outline outline-2 outline-primary" : "cursor-text hover:outline hover:outline-1 hover:outline-primary"}`}
         style={{
@@ -207,6 +356,11 @@ function EditBox({ e, vt, selected, onSelect, onCommit }: {
             onBlur={(ev) => onCommit(e.id, ev.currentTarget.innerText.replace(/\n/g, " "))}
             onKeyDown={(ev) => {
               if (ev.key === "Enter" || ev.key === "Escape") { ev.preventDefault(); ev.currentTarget.blur(); }
+              if (ev.key === "Tab") {
+                ev.preventDefault();
+                onCommit(e.id, ev.currentTarget.innerText.replace(/\n/g, " "));
+                onTab(e.id, ev.shiftKey);
+              }
             }}
           />
         ) : (

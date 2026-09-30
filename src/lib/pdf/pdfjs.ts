@@ -2,6 +2,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { FontFamily, TextItemInfo } from "./types";
 import { collectDrawnRuns, runKey } from "./ops";
+import { groupItems } from "./group";
 
 let libPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
@@ -94,7 +95,7 @@ export async function extractPageItems(pdf: PDFDocumentProxy, pageIndex: number)
       source: "native",
     });
   });
-  return refineFonts(page, out);
+  return groupItems(refineFonts(page, out));
 }
 
 /** After a page is rendered, PDF.js has the real font objects; use them to refine family/bold/italic. */

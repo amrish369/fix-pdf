@@ -28,9 +28,19 @@ export interface TextStyle {
   align: Align;
 }
 
+/** A baseline-anchored area of original glyphs that must be painted over. */
+export interface CoverRect {
+  x: number;
+  y: number;
+  size: number;
+  angle: number;
+  width: number;
+}
+
 export interface Edit {
   id: string;
   page: number;
+  kind?: "text" | "erase";
   text: string;
   style: TextStyle;
   bg: string; // hex, used to cover the original glyphs
@@ -38,7 +48,11 @@ export interface Edit {
   y: number;
   angle: number;
   width: number; // original width (cover area); 0 for new text
+  rectW?: number; // erase rectangle, PDF space (x,y = bottom-left)
+  rectH?: number;
   original?: TextItemInfo;
+  covers?: CoverRect[]; // multiple original runs hidden by this edit (multi-select)
+  memberIds?: string[]; // ids of the original text runs merged into this edit
   isNew: boolean;
   pristine?: boolean; // opened but not changed yet — skipped on export
 }

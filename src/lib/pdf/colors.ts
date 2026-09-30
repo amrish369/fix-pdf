@@ -65,6 +65,38 @@ export function sampleColors(canvas: HTMLCanvasElement, dpr: number, vt: Mat, it
   return { color, bg: hex(bg[0], bg[1], bg[2]) };
 }
 
+/** Dominant colour just outside a screen-space rectangle — used to erase an area invisibly. */
+export function sampleRectBg(canvas: HTMLCanvasElement, dpr: number, r: { left: number; top: number; width: number; height: number }) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return "#ffffff";
+  const pad = 3;
+  const x0 = Math.max(0, Math.floor((r.left - pad) * dpr));
+  const y0 = Math.max(0, Math.floor((r.top - pad) * dpr));
+  const x1 = Math.min(canvas.width, Math.ceil((r.left + r.width + pad) * dpr));
+  const y1 = Math.min(canvas.height, Math.ceil((r.top + r.height + pad) * dpr));
+  const W = x1 - x0, H = y1 - y0;
+  if (W <= 2 || H <= 2) return "#ffffff";
+  let data: Uint8ClampedArray;
+  try { data = ctx.getImageData(x0, y0, W, H).data; } catch { return "#ffffff"; }
+  const at = (x: number, y: number) => {
+    const i = (y * W + x) * 4;
+    const a = data[i + 3] / 255;
+    return [data[i] * a + 255 * (1 - a), data[i + 1] * a + 255 * (1 - a), data[i + 2] * a + 255 * (1 - a)];
+  };
+  const buckets = new Map<string, { n: number; r: number; g: number; b: number }>();
+  const add = (p: number[]) => {
+    const key = p.map((v) => v >> 4).join(",");
+    const e = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+    e.n++; e.r += p[0]; e.g += p[1]; e.b += p[2];
+    buckets.set(key, e);
+  };
+  for (let x = 0; x < W; x++) { add(at(x, 0)); add(at(x, H - 1)); }
+  for (let y = 0; y < H; y++) { add(at(0, y)); add(at(W - 1, y)); }
+  let best = { n: 0, r: 255, g: 255, b: 255 };
+  buckets.forEach((e) => { if (e.n > best.n) best = e; });
+  return hex(best.r / best.n, best.g / best.n, best.b / best.n);
+}
+
 /** Offscreen render a page to sample colors + refine fonts for items not yet visible (used by Find & Replace). */
 export async function samplePageItems(pdf: PDFDocumentProxy, pageIndex: number, items: TextItemInfo[]) {
   const page = await pdf.getPage(pageIndex + 1);

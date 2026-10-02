@@ -120,7 +120,7 @@ export function PageView(p: Props) {
       page: p.pageIndex,
       kind: "text",
       text,
-      style: { size: head.size, color, bold: head.bold, italic: head.italic, family: head.family, align: "left" },
+      style: { size: head.size, color, bold: ordered.some((it) => it.bold), italic: ordered.some((it) => it.italic), family: head.family, align: "left" },
       bg: sampled.bg,
       x: head.x, y: head.y, angle: head.angle, width: lineWidth,
       original: head,

@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { FontFamily, TextItemInfo } from "./types";
-import { collectDrawnRuns, runKey } from "./ops";
+import { collectDrawnRuns, findRun } from "./ops";
 import { groupItems } from "./group";
 
 let libPromise: Promise<typeof import("pdfjs-dist")> | null = null;
@@ -77,7 +77,7 @@ export async function extractPageItems(pdf: PDFDocumentProxy, pageIndex: number)
     const size = Math.hypot(t[2], t[3]) || Math.hypot(t[0], t[1]);
     const css = tc.styles[raw.fontName]?.fontFamily;
     const s = styleFromName(raw.fontName);
-    const run = runs.get(runKey(t[4], t[5]));
+    const run = findRun(runs, t[4], t[5]);
     out.push({
       id: `p${pageIndex}-i${i}`,
       page: pageIndex,
@@ -89,7 +89,7 @@ export async function extractPageItems(pdf: PDFDocumentProxy, pageIndex: number)
       angle: Math.atan2(t[1], t[0]),
       fontName: raw.fontName,
       family: familyFromName(raw.fontName, css),
-      bold: s.bold,
+      bold: s.bold || !!run?.bold,
       italic: s.italic,
       ...(run?.color ? { color: run.color } : {}),
       source: "native",
@@ -107,12 +107,12 @@ export function refineFonts(page: { commonObjs: { has: (k: string) => boolean; g
       const f = page.commonObjs.get(it.fontName) as {
         name?: string; bold?: boolean; black?: boolean; italic?: boolean; isSerifFont?: boolean; isMonospace?: boolean;
       };
-      const name = f?.name ?? "";
+      const name = [f?.name, (f as { fallbackName?: string })?.fallbackName, (f as { loadedName?: string })?.loadedName].filter(Boolean).join(" ");
       const s = styleFromName(name);
       let family = familyFromName(name);
       if (f?.isMonospace) family = "mono";
-      else if (f?.isSerifFont && family === "sans" && !/sans|arial|helvet/i.test(name)) family = "serif";
-      return { ...it, family, bold: s.bold || !!f?.bold || !!f?.black, italic: s.italic || !!f?.italic };
+      else if (f?.isSerifFont && family === "sans" && !/sans|arial|helvet|calibri/i.test(name)) family = "serif";
+      return { ...it, family, bold: it.bold || s.bold || !!f?.bold || !!f?.black, italic: it.italic || s.italic || !!f?.italic };
     } catch {
       return it;
     }

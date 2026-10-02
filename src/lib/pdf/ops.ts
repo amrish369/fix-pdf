@@ -47,8 +47,9 @@ export async function collectDrawnRuns(
   }
 
   let ctm: M = [1, 0, 0, 1, 0, 0];
-  const stack: { ctm: M; color: string }[] = [];
+  const stack: { ctm: M; color: string; mode: number }[] = [];
   let color = "#000000";
+  let mode = 0;
   let tm: M = [1, 0, 0, 1, 0, 0];
   let tlm: M = [1, 0, 0, 1, 0, 0];
   let leading = 0;
@@ -58,7 +59,9 @@ export async function collectDrawnRuns(
   const record = () => {
     const trm = mul(tm, ctm);
     const key = runKey(trm[4], trm[5]);
-    if (!out.has(key)) out.set(key, { color, fontName, size: fontSize });
+    // fill+stroke render modes (2, 6) are "faux bold"
+    const bold = mode === 2 || mode === 6;
+    if (!out.has(key)) out.set(key, { color, fontName, size: fontSize, bold });
   };
 
   for (let i = 0; i < ops.fnArray.length; i++) {
@@ -66,7 +69,10 @@ export async function collectDrawnRuns(
     const a = ops.argsArray[i] as number[];
     switch (fn) {
       case OPS["save"]:
-        stack.push({ ctm, color });
+        stack.push({ ctm, color, mode });
+        break;
+      case OPS["setTextRenderingMode"]:
+        mode = Number(a[0]) || 0;
         break;
       case OPS["restore"]: {
         const s = stack.pop();

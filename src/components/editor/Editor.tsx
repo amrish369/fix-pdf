@@ -54,6 +54,10 @@ export function Editor() {
   const edits = h.present;
   const editsRef = useRef(edits);
   editsRef.current = edits;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
 
   useEffect(() => () => { void pdf?.loadingTask.destroy(); }, [pdf]);
 
@@ -150,7 +154,7 @@ export function Editor() {
     cur[e.id] = e;
     dispatch({ type: "apply", edits: cur, record: !e.pristine });
     setSelectedId(e.id);
-    if (e.isNew) setMode("edit");
+    if (e.isNew && e.kind !== "erase") setMode("edit");
   }, []);
 
   const updateEdit = useCallback((id: string, patch: Patch) => {
@@ -260,6 +264,7 @@ export function Editor() {
         <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void openFile(f); e.target.value = ""; }} />
         <TB onClick={() => fileInput.current?.click()} label="Open PDF"><Upload className="h-4 w-4" /></TB>
+        {pdf && <TB onClick={() => { if (window.confirm("Close this document and discard saved edits?")) void startFresh(); }} label="Start fresh (close document)"><RotateCcw className="h-4 w-4" /></TB>}
         {pdf && (
           <>
             <Sep />
@@ -302,6 +307,12 @@ export function Editor() {
         </div>
       )}
 
+      {preview && pdf && (
+        <PreviewDialog original={pdf} bytes={preview}
+          pages={[...new Set(Object.values(stripPristine(edits)).map((e) => e.page))].sort((a, b) => a - b)}
+          onClose={() => setPreview(null)}
+          onConfirm={() => { downloadBytes(preview, fileName.replace(/\.pdf$/i, "") + "-edited.pdf"); setPreview(null); }} />
+      )}
       {!pdf ? (
         <Landing onFile={openFile} onPick={() => fileInput.current?.click()} />
       ) : (
@@ -314,7 +325,8 @@ export function Editor() {
               {sizes.map((s, i) => (
                 <PageView key={i} pdf={pdf} pageIndex={i} scale={scale} baseSize={s} items={items[i] ?? []} edits={edits}
                   selectedId={selectedId} mode={mode} onCreateEdit={createEdit} onSelect={select} onCommitText={commitText}
-                  onItemsRefined={onRefined} onVisible={setCurrentPage} registerEl={(p, el) => (pageEls.current[p] = el)} />
+                  onItemsRefined={onRefined} onVisible={setCurrentPage} onTab={onTab}
+                  registerEl={(p, el) => (pageEls.current[p] = el)} registerApi={(p, api) => (pageApis.current[p] = api)} />
               ))}
             </div>
           </main>

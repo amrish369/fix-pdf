@@ -226,13 +226,26 @@ export function Editor() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
+      // Alt + Arrow nudges the selected text 1px (Shift = 5px), even while typing in it.
+      const sid = selectedIdRef.current;
+      if (e.altKey && sid && e.key.startsWith("Arrow")) {
+        const cur = editsRef.current[sid];
+        if (cur) {
+          e.preventDefault();
+          const step = (e.shiftKey ? 5 : 1) / scaleRef.current;
+          const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+          const dy = e.key === "ArrowUp" ? step : e.key === "ArrowDown" ? -step : 0;
+          updateEdit(sid, { x: cur.x + dx, y: cur.y + dy });
+        }
+        return;
+      }
       if (t.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); select(null); dispatch({ type: e.shiftKey ? "redo" : "undo" }); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); select(null); dispatch({ type: "redo" }); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [select]);
+  }, [select, updateEdit]);
 
   const selected = selectedId ? edits[selectedId] : null;
   const changeCount = Object.values(edits).filter((e) => !e.pristine).length;
@@ -256,6 +269,8 @@ export function Editor() {
             <Sep />
             <TB active={mode === "edit"} onClick={() => setMode("edit")} label="Edit text"><MousePointer2 className="h-4 w-4" /></TB>
             <TB active={mode === "add"} onClick={() => { select(null); setMode("add"); }} label="Add text"><FilePlus2 className="h-4 w-4" /></TB>
+            <TB active={mode === "select"} onClick={() => { select(null); setMode("select"); }} label="Drag to select multiple words"><BoxSelect className="h-4 w-4" /></TB>
+            <TB active={mode === "erase"} onClick={() => { select(null); setMode("erase"); }} label="Eraser (drag over an area)"><Eraser className="h-4 w-4" /></TB>
             <Sep />
             <TB disabled={!h.past.length} onClick={() => { select(null); dispatch({ type: "undo" }); }} label="Undo"><Undo2 className="h-4 w-4" /></TB>
             <TB disabled={!h.future.length} onClick={() => { select(null); dispatch({ type: "redo" }); }} label="Redo"><Redo2 className="h-4 w-4" /></TB>

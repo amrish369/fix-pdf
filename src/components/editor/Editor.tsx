@@ -8,7 +8,10 @@ import { exportPdf, downloadBytes } from "@/lib/pdf/export";
 import { samplePageItems } from "@/lib/pdf/colors";
 import { isLikelyScanned, ocrPage } from "@/lib/ocr/ocr";
 import type { Edit, Edits, TextItemInfo, TextStyle } from "@/lib/pdf/types";
-import { PageView, Thumb } from "./PageView";
+import { PageView, Thumb, type Mode, type PageApi } from "./PageView";
+import { PreviewDialog } from "./Preview";
+import { clearSession, loadSession, saveSession, type Session } from "@/lib/persist";
+import { BoxSelect, Eraser, RotateCcw } from "lucide-react";
 
 type Patch = Omit<Partial<Edit>, "style"> & { style?: Partial<TextStyle> };
 type H = { past: Edits[]; present: Edits; future: Edits[] };
@@ -34,7 +37,11 @@ export function Editor() {
   const [sizes, setSizes] = useState<{ w: number; h: number }[]>([]);
   const [items, setItems] = useState<Record<number, TextItemInfo[]>>({});
   const [scale, setScale] = useState(1.25);
-  const [mode, setMode] = useState<"edit" | "add">("edit");
+  const [mode, setMode] = useState<Mode>("edit");
+  const [preview, setPreview] = useState<Uint8Array | null>(null);
+  const pageApis = useRef<Record<number, PageApi | null>>({});
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const [h, dispatch] = useReducer(hist, { past: [], present: {}, future: [] });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
@@ -50,20 +57,58 @@ export function Editor() {
 
   useEffect(() => () => { void pdf?.loadingTask.destroy(); }, [pdf]);
 
+  // Restore the last session after a refresh / tab close.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    void loadSession().then((s) => {
+      if (s?.bytes) void openBytes(new Uint8Array(s.bytes), s.fileName, s);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-save edits (debounced) so no work is lost.
+  useEffect(() => {
+    if (!bytes) return;
+    const t = setTimeout(() => {
+      void saveSession({
+        bytes: bytes.slice().buffer as ArrayBuffer, fileName, edits: stripPristine(edits), scale, currentPage, savedAt: Date.now(),
+      });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [bytes, fileName, edits, scale, currentPage]);
+
   const openFile = async (file: File) => {
     setError(null);
     if (file.size > MAX_BYTES) return setError("File is larger than 100 MB.");
-    setBusy("Opening PDF…");
+    await openBytes(new Uint8Array(await file.arrayBuffer()), file.name);
+  };
+
+  const startFresh = async () => {
+    await clearSession();
+    void pdf?.loadingTask.destroy();
+    setPdf(null); setBytes(null); setItems({}); setSizes([]); dispatch({ type: "reset" }); setSelectedId(null);
+  };
+
+  const openBytes = async (buf: Uint8Array, name: string, resume?: Session) => {
+    setError(null);
+    setBusy(resume ? "Restoring your last session…" : "Opening PDF…");
     try {
-      const buf = new Uint8Array(await file.arrayBuffer());
       const doc = await loadPdf(buf);
       const sz: { w: number; h: number }[] = [];
       for (let i = 0; i < doc.numPages; i++) {
         const vp = (await doc.getPage(i + 1)).getViewport({ scale: 1 });
         sz.push({ w: vp.width, h: vp.height });
       }
-      setBytes(buf); setFileName(file.name); setSizes(sz); setItems({}); setPdf(doc);
+      setBytes(buf); setFileName(name); setSizes(sz); setItems({}); setPdf(doc);
       dispatch({ type: "reset" }); setSelectedId(null); setCurrentPage(0); setScanned(false);
+      if (resume) {
+        dispatch({ type: "apply", edits: resume.edits ?? {}, record: false });
+        setScale(resume.scale || 1.25);
+        const pg = resume.currentPage || 0;
+        setTimeout(() => pageEls.current[pg]?.scrollIntoView({ block: "start" }), 300);
+      }
       setBusy("Reading text…");
       const all: Record<number, TextItemInfo[]> = {};
       for (let i = 0; i < doc.numPages; i++) {
@@ -139,13 +184,24 @@ export function Editor() {
 
   const goTo = (i: number) => pageEls.current[i]?.scrollIntoView({ behavior: "smooth", block: "start" });
 
+  const onTab = useCallback((id: string, back: boolean) => {
+    const cur = editsRef.current[id];
+    if (!cur) return;
+    const list = [...(itemsRef.current[cur.page] ?? [])]
+      .filter((it) => !editsRef.current[it.id])
+      .sort((a, b) => (Math.abs(a.y - b.y) > 1.2 ? b.y - a.y : a.x - b.x));
+    const after = (it: TextItemInfo) => (Math.abs(it.y - cur.y) > 1.2 ? it.y < cur.y : it.x > cur.x);
+    const next = back ? [...list].reverse().find((it) => !after(it)) : list.find(after);
+    if (next) setTimeout(() => pageApis.current[cur.page]?.selectItem(next.id), 0);
+  }, []);
+
   const download = async () => {
     if (!bytes) return;
     select(null);
-    setBusy("Building PDF…"); setError(null);
+    setBusy("Building preview…"); setError(null);
     try {
       const out = await exportPdf(bytes, stripPristine(editsRef.current));
-      downloadBytes(out, fileName.replace(/\.pdf$/i, "") + "-edited.pdf");
+      setPreview(out);
     } catch (e) {
       setError((e as Error).message);
     } finally {

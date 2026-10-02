@@ -359,7 +359,7 @@ function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
               if (ev.key === "Tab") {
                 ev.preventDefault();
                 onCommit(e.id, ev.currentTarget.innerText.replace(/\n/g, " "));
-                onTab(e.id, ev.shiftKey);
+                onTab?.(e.id, ev.shiftKey);
               }
             }}
           />

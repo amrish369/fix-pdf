@@ -31,9 +31,9 @@ interface Props {
   onCommitText: (id: string, text: string) => void;
   onItemsRefined: (page: number, items: TextItemInfo[]) => void;
   onVisible: (page: number) => void;
-  onTab: (id: string, back: boolean) => void;
+  onTab?: (id: string, back: boolean) => void;
   registerEl: (page: number, el: HTMLDivElement | null) => void;
-  registerApi: (page: number, api: PageApi | null) => void;
+  registerApi?: (page: number, api: PageApi | null) => void;
 }
 
 export function PageView(p: Props) {
@@ -139,8 +139,8 @@ export function PageView(p: Props) {
         if (it) editFromItems([it]);
       },
     };
-    p.registerApi(p.pageIndex, api);
-    return () => p.registerApi(p.pageIndex, null);
+    p.registerApi?.(p.pageIndex, api);
+    return () => p.registerApi?.(p.pageIndex, null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.pageIndex, editFromItems]);
 
@@ -254,7 +254,7 @@ export function PageView(p: Props) {
           );
         })}
         {vt && pageEdits.map((e) => (
-          <EditBox key={e.id} e={e} vt={vt} selected={p.selectedId === e.id} onSelect={p.onSelect} onCommit={p.onCommitText} onTab={p.onTab} />
+          <EditBox key={e.id} e={e} vt={vt} selected={p.selectedId === e.id} onSelect={p.onSelect} onCommit={p.onCommitText} onTab={p.onTab ?? (() => {})} />
         ))}
         {marquee && (
           <div
@@ -272,7 +272,7 @@ export function PageView(p: Props) {
 
 function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
   e: Edit; vt: Mat; selected: boolean; onSelect: (id: string) => void; onCommit: (id: string, t: string) => void;
-  onTab: (id: string, back: boolean) => void;
+  onTab?: (id: string, back: boolean) => void;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const covers = e.kind === "erase" ? [] : (e.covers ?? (e.original ? [{ x: e.x, y: e.y, size: e.original.size, angle: e.angle, width: e.width }] : []));
@@ -359,7 +359,7 @@ function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
               if (ev.key === "Tab") {
                 ev.preventDefault();
                 onCommit(e.id, ev.currentTarget.innerText.replace(/\n/g, " "));
-                onTab(e.id, ev.shiftKey);
+                onTab?.(e.id, ev.shiftKey);
               }
             }}
           />

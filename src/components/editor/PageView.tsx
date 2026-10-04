@@ -308,24 +308,28 @@ function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
       let range: Range | null = null;
       const pt = pendingCaret;
       pendingCaret = null;
-      const tn = el.firstChild;
-      if (pt && tn && tn.nodeType === Node.TEXT_NODE) {
-        // pick the character boundary nearest to the tap
-        const len = tn.textContent?.length ?? 0;
-        const probe = document.createRange();
-        let best = len, bestD = Infinity;
-        for (let i = 0; i <= len; i++) {
-          probe.setStart(tn, i); probe.setEnd(tn, i);
-          const r = probe.getClientRects()[0] ?? probe.getBoundingClientRect();
-          const dist = Math.abs(r.left - pt.x) + (pt.y < r.top || pt.y > r.bottom ? 1000 : 0);
-          if (dist < bestD) { bestD = dist; best = i; }
+      const place = () => {
+        const tn = el.firstChild;
+        if (pt && tn && tn.nodeType === Node.TEXT_NODE) {
+          // pick the character boundary nearest to the tap
+          const len = tn.textContent?.length ?? 0;
+          const probe = document.createRange();
+          let best = len, bestD = Infinity;
+          for (let i = 0; i <= len; i++) {
+            probe.setStart(tn, i); probe.setEnd(tn, i);
+            const r = probe.getClientRects()[0] ?? probe.getBoundingClientRect();
+            const dist = Math.abs(r.left - pt.x) + (pt.y < r.top || pt.y > r.bottom ? 1000 : 0);
+            if (dist < bestD) { bestD = dist; best = i; }
+          }
+          range = document.createRange(); range.setStart(tn, best);
         }
-        range = document.createRange(); range.setStart(tn, best);
-      }
-      if (!range) { range = document.createRange(); range.selectNodeContents(el); range.collapse(false); }
-      range.collapse(true);
-      sel?.removeAllRanges();
-      sel?.addRange(range);
+        if (!range) { range = document.createRange(); range.selectNodeContents(el); range.collapse(false); }
+        range.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      };
+      place();
+      requestAnimationFrame(() => { if (document.activeElement === el) place(); });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);

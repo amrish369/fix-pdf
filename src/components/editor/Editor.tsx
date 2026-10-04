@@ -381,64 +381,38 @@ function Landing({ onFile, onPick }: { onFile: (f: File) => void; onPick: () => 
   );
 }
 
-function Props({ e, onChange, onRemove, onClose }: { e: Edit; onChange: (p: Patch) => void; onRemove: () => void; onClose: () => void }) {
-  const [text, setText] = useState(e.text);
-  useEffect(() => setText(e.text), [e.text, e.id]);
-  const lbl = "mb-1 block text-xs font-medium text-muted-foreground";
-  const inp = "w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm";
+function FormatBar({ e, onChange, onRemove, onClose }: { e: Edit; onChange: (p: Patch) => void; onRemove: () => void; onClose: () => void }) {
+  // keep the caret inside the text while pressing toggle buttons
+  const keep = (ev: React.MouseEvent) => ev.preventDefault();
+  const inp = "h-8 rounded-md border border-input bg-background px-1.5 text-sm";
+  const tg = (on: boolean) => `grid h-8 w-8 shrink-0 place-items-center rounded-md border border-input ${on ? "bg-primary text-primary-foreground" : ""}`;
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Text properties</h2>
-        <button onClick={onClose} aria-label="Close"><X className="h-4 w-4" /></button>
-      </div>
-      {e.original && (
-        <p className="text-xs text-muted-foreground">Original: “{e.original.str}” · detected {e.original.family}{e.original.bold ? " bold" : ""}{e.original.italic ? " italic" : ""}</p>
-      )}
-      <div>
-        <label className={lbl}>Text</label>
-        <input className={inp} value={text} onChange={(ev) => setText(ev.target.value)} onBlur={() => text !== e.text && onChange({ text })}
-          onKeyDown={(ev) => ev.key === "Enter" && text !== e.text && onChange({ text })} />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className={lbl}>Size (pt)</label>
-          <input type="number" min={2} max={400} step={0.5} className={inp} value={+e.style.size.toFixed(2)}
-            onChange={(ev) => { const v = parseFloat(ev.target.value); if (v > 0) onChange({ style: { size: v } }); }} />
-        </div>
-        <div>
-          <label className={lbl}>Font</label>
-          <select className={inp} value={e.style.family} onChange={(ev) => onChange({ style: { family: ev.target.value as TextStyle["family"] } })}>
-            <option value="sans">Sans (Helvetica)</option>
-            <option value="serif">Serif (Times)</option>
-            <option value="mono">Mono (Courier)</option>
-          </select>
-        </div>
-        <div>
-          <label className={lbl}>Text color</label>
-          <input type="color" className="h-9 w-full cursor-pointer rounded-md border border-input bg-background" value={e.style.color}
-            onChange={(ev) => onChange({ style: { color: ev.target.value } })} />
-        </div>
-        <div>
-          <label className={lbl}>Background</label>
-          <input type="color" className="h-9 w-full cursor-pointer rounded-md border border-input bg-background" value={e.bg}
-            onChange={(ev) => onChange({ bg: ev.target.value })} />
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <button onClick={() => onChange({ style: { bold: !e.style.bold } })} aria-label="Bold"
-          className={`grid h-9 w-9 place-items-center rounded-md border border-input ${e.style.bold ? "bg-primary text-primary-foreground" : ""}`}><Bold className="h-4 w-4" /></button>
-        <button onClick={() => onChange({ style: { italic: !e.style.italic } })} aria-label="Italic"
-          className={`grid h-9 w-9 place-items-center rounded-md border border-input ${e.style.italic ? "bg-primary text-primary-foreground" : ""}`}><Italic className="h-4 w-4" /></button>
-        <select className={inp} value={e.style.align} disabled={!e.width} onChange={(ev) => onChange({ style: { align: ev.target.value as TextStyle["align"] } })}>
-          <option value="left">Align left</option>
-          <option value="center">Align center</option>
-          <option value="right">Align right</option>
+    <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border bg-card px-2 py-1.5 sm:px-3">
+      <select aria-label="Font" className={inp} value={e.style.family} onChange={(ev) => onChange({ style: { family: ev.target.value as TextStyle["family"] } })}>
+        <option value="sans">Sans</option>
+        <option value="serif">Serif</option>
+        <option value="mono">Mono</option>
+      </select>
+      <input aria-label="Size (pt)" type="number" min={2} max={400} step={0.5} className={`${inp} w-16`} value={+e.style.size.toFixed(2)}
+        onChange={(ev) => { const v = parseFloat(ev.target.value); if (v > 0) onChange({ style: { size: v } }); }} />
+      <button onMouseDown={keep} onClick={() => onChange({ style: { bold: !e.style.bold } })} aria-label="Bold" className={tg(e.style.bold)}><Bold className="h-4 w-4" /></button>
+      <button onMouseDown={keep} onClick={() => onChange({ style: { italic: !e.style.italic } })} aria-label="Italic" className={tg(e.style.italic)}><Italic className="h-4 w-4" /></button>
+      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Text color">A
+        <input type="color" aria-label="Text color" className="h-8 w-8 cursor-pointer rounded-md border border-input bg-background" value={e.style.color} onChange={(ev) => onChange({ style: { color: ev.target.value } })} />
+      </label>
+      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Background">Bg
+        <input type="color" aria-label="Background color" className="h-8 w-8 cursor-pointer rounded-md border border-input bg-background" value={e.bg} onChange={(ev) => onChange({ bg: ev.target.value })} />
+      </label>
+      {!!e.width && (
+        <select aria-label="Alignment" className={inp} value={e.style.align} onChange={(ev) => onChange({ style: { align: ev.target.value as TextStyle["align"] } })}>
+          <option value="left">Left</option>
+          <option value="center">Center</option>
+          <option value="right">Right</option>
         </select>
-      </div>
-      <button onClick={onRemove} className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10">
-        <Trash2 className="h-4 w-4" /> {e.isNew ? "Delete text" : "Revert to original"}
-      </button>
+      )}
+      <button onMouseDown={keep} onClick={onRemove} title={e.isNew ? "Delete text" : "Revert to original"} aria-label={e.isNew ? "Delete text" : "Revert to original"}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-destructive/40 text-destructive"><Trash2 className="h-4 w-4" /></button>
+      <button onClick={onClose} aria-label="Done" className="ml-auto shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground">Done</button>
     </div>
   );
 }

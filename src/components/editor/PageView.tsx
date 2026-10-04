@@ -309,6 +309,7 @@ function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
       const pt = pendingCaret;
       pendingCaret = null;
       const place = () => {
+        range = null;
         const tn = el.firstChild;
         if (pt && tn && tn.nodeType === Node.TEXT_NODE) {
           // pick the character boundary nearest to the tap

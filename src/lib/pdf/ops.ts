@@ -9,6 +9,7 @@ export interface DrawnRun {
   color: string; // hex
   fontName: string;
   size: number;
+  bold: boolean;
 }
 
 type M = [number, number, number, number, number, number];
@@ -76,7 +77,7 @@ export async function collectDrawnRuns(
         break;
       case OPS["restore"]: {
         const s = stack.pop();
-        if (s) { ctm = s.ctm; color = s.color; }
+        if (s) { ctm = s.ctm; color = s.color; mode = s.mode; }
         break;
       }
       case OPS["transform"]:
@@ -140,4 +141,18 @@ export async function collectDrawnRuns(
     }
   }
   return out;
+}
+
+/** Exact key lookup, then a small neighbourhood search to tolerate rounding drift. */
+export function findRun(runs: Map<string, DrawnRun>, x: number, y: number): DrawnRun | undefined {
+  const hit = runs.get(runKey(x, y));
+  if (hit) return hit;
+  const cx = Math.round(x * 2), cy = Math.round(y * 2);
+  for (let dy = 0; dy <= 2; dy++)
+    for (let dx = 0; dx <= 6; dx++)
+      for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        const r = runs.get(`${cx + sx * dx}:${cy + sy * dy}`);
+        if (r) return r;
+      }
+  return undefined;
 }

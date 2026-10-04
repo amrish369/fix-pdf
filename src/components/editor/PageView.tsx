@@ -307,7 +307,7 @@ function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
       const sel = window.getSelection();
       let range: Range | null = null;
       const pt = pendingCaret;
-      pendingCaret = null;
+      setTimeout(() => { pendingCaret = null; }, 0);
       const place = () => {
         range = null;
         const tn = el.firstChild;

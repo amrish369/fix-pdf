@@ -290,6 +290,16 @@ export function Editor() {
           </>
         )}
       </header>
+      {pdf && selected && selected.kind !== "erase" && (
+        <FormatBar e={selected} onChange={(patch) => updateEdit(selected.id, patch)} onRemove={() => removeEdit(selected.id)} onClose={() => select(null)} />
+      )}
+      {pdf && selected && selected.kind === "erase" && (
+        <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-1.5 text-sm">
+          <span className="flex-1 text-muted-foreground">Erased area</span>
+          <button onClick={() => removeEdit(selected.id)} className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive"><Trash2 className="h-3.5 w-3.5" /> Remove</button>
+          <button onClick={() => select(null)} aria-label="Done"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       {(busy || error) && (
         <div className={`flex items-center gap-2 px-3 py-1.5 text-sm ${error ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-foreground"}`}>
@@ -330,11 +340,10 @@ export function Editor() {
               ))}
             </div>
           </main>
-          {(selected || findOpen) && (
+          {findOpen && (
             <aside className="fixed inset-x-0 bottom-0 z-30 max-h-[55dvh] overflow-y-auto border-t border-border bg-card p-3 shadow-lg md:static md:max-h-none md:w-72 md:border-l md:border-t-0 md:shadow-none">
-              {findOpen && <FindReplace pdf={pdf} items={items} edits={edits} onApply={(next) => { select(null); dispatch({ type: "apply", edits: next, record: true }); }}
-                onJump={goTo} onClose={() => setFindOpen(false)} setBusy={setBusy} />}
-              {selected && <Props e={selected} onChange={(patch) => updateEdit(selected.id, patch)} onRemove={() => removeEdit(selected.id)} onClose={() => select(null)} />}
+              <FindReplace pdf={pdf} items={items} edits={edits} onApply={(next) => { select(null); dispatch({ type: "apply", edits: next, record: true }); }}
+                onJump={goTo} onClose={() => setFindOpen(false)} setBusy={setBusy} />
             </aside>
           )}
         </div>

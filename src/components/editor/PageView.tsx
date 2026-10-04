@@ -11,6 +11,21 @@ export const CSS_FONT = {
   mono: "'Courier New', Courier, 'Liberation Mono', monospace",
 } as const;
 
+// Where the user tapped, so the caret lands exactly there once the editor opens.
+let pendingCaret: { x: number; y: number } | null = null;
+// Focusing an input inside the tap itself makes mobile browsers open the keyboard immediately.
+function primeKeyboard() {
+  let el = document.getElementById("kb-primer") as HTMLInputElement | null;
+  if (!el) {
+    el = document.createElement("input");
+    el.id = "kb-primer";
+    el.setAttribute("aria-hidden", "true");
+    el.style.cssText = "position:fixed;top:40%;left:0;width:1px;height:1px;opacity:0;font-size:16px;border:0;padding:0";
+    document.body.appendChild(el);
+  }
+  el.focus({ preventScroll: true });
+}
+
 export type Mode = "edit" | "add" | "select" | "erase";
 
 export interface PageApi {
@@ -244,7 +259,13 @@ export function PageView(p: Props) {
               type="button"
               aria-label={`Edit text: ${it.str}`}
               title={it.str}
-              onClick={(e) => { e.stopPropagation(); if (p.mode === "edit") editFromItems([it]); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (p.mode !== "edit") return;
+                pendingCaret = { x: e.clientX, y: e.clientY };
+                primeKeyboard();
+                editFromItems([it]);
+              }}
               className={`absolute rounded-[2px] hover:bg-primary/10 hover:outline hover:outline-1 hover:outline-primary ${p.mode === "select" ? "pointer-events-none" : "cursor-text"} ${it.source === "ocr" ? "outline outline-1 outline-dashed outline-primary/40" : ""}`}
               style={{
                 left: b.left, top: b.top, width: Math.max(b.width, 4), height: b.height,
@@ -280,13 +301,36 @@ function EditBox({ e, vt, selected, onSelect, onCommit, onTab }: {
 
   useEffect(() => {
     if (selected && ref.current) {
-      ref.current.innerText = e.text;
-      ref.current.focus();
+      const el = ref.current;
+      el.innerText = e.text;
+      el.focus({ preventScroll: true });
       const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(ref.current);
-      sel?.removeAllRanges();
-      sel?.addRange(range);
+      let range: Range | null = null;
+      const pt = pendingCaret;
+      setTimeout(() => { pendingCaret = null; }, 0);
+      const place = () => {
+        range = null;
+        const tn = el.firstChild;
+        if (pt && tn && tn.nodeType === Node.TEXT_NODE) {
+          // pick the character boundary nearest to the tap
+          const len = tn.textContent?.length ?? 0;
+          const probe = document.createRange();
+          let best = len, bestD = Infinity;
+          for (let i = 0; i <= len; i++) {
+            probe.setStart(tn, i); probe.setEnd(tn, i);
+            const r = probe.getClientRects()[0] ?? probe.getBoundingClientRect();
+            const dist = Math.abs(r.left - pt.x) + (pt.y < r.top || pt.y > r.bottom ? 1000 : 0);
+            if (dist < bestD) { bestD = dist; best = i; }
+          }
+          range = document.createRange(); range.setStart(tn, best);
+        }
+        if (!range) { range = document.createRange(); range.selectNodeContents(el); range.collapse(false); }
+        range.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      };
+      place();
+      requestAnimationFrame(() => { if (document.activeElement === el) place(); });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);

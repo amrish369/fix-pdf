@@ -1,6 +1,7 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Edit, TextStyle } from "@/lib/pdf/types";
 import { screenBox } from "@/lib/pdf/geometry";
+import { groqMatch } from "./groq.functions";
 
 export type Provider = "groq" | "gemini";
 const KEY = "docedit-ai-keys";
@@ -88,13 +89,18 @@ async function callGemini(key: string, img: string, p: string) {
 }
 
 export async function aiMatch(pdf: PDFDocumentProxy, e: Edit, keys: AiKeys): Promise<MatchResult> {
-  const order: Provider[] = keys.provider === "gemini" ? ["gemini", "groq"] : ["groq", "gemini"];
-  const avail = order.filter((p) => keys[p]);
-  if (!avail.length) throw new Error("Pehle AI settings me Groq ya Gemini key daalein");
   const img = await cropOriginal(pdf, e);
   const p = prompt(e);
   let lastErr: unknown;
-  for (const prov of avail) {
+  // 1) Secure backend Groq (key stays on server)
+  try {
+    const res = await groqMatch({ data: { img, prompt: p } });
+    if (res.ok) return parse(res.text, e);
+    lastErr = new Error(res.error);
+  } catch (err) { lastErr = err; }
+  // 2) Optional fallback: browser-saved keys
+  const order: Provider[] = keys.provider === "gemini" ? ["gemini", "groq"] : ["groq", "gemini"];
+  for (const prov of order.filter((x) => keys[x])) {
     try {
       const txt = prov === "groq" ? await callGroq(keys.groq!, img, p) : await callGemini(keys.gemini!, img, p);
       return parse(txt, e);

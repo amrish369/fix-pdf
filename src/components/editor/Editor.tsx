@@ -11,7 +11,8 @@ import type { Edit, Edits, TextItemInfo, TextStyle } from "@/lib/pdf/types";
 import { PageView, Thumb, type Mode, type PageApi } from "./PageView";
 import { PreviewDialog } from "./Preview";
 import { clearSession, loadSession, saveSession, type Session } from "@/lib/persist";
-import { BoxSelect, Eraser, RotateCcw } from "lucide-react";
+import { BoxSelect, Eraser, RotateCcw, Sparkles, Settings2 } from "lucide-react";
+import { aiMatch, loadKeys, saveKeys, type AiKeys } from "@/lib/ai/match";
 
 type Patch = Omit<Partial<Edit>, "style"> & { style?: Partial<TextStyle> };
 type H = { past: Edits[]; present: Edits; future: Edits[] };
@@ -252,6 +253,21 @@ export function Editor() {
   }, [select, updateEdit]);
 
   const selected = selectedId ? edits[selectedId] : null;
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const runAi = async (e: Edit) => {
+    if (!pdf) return;
+    const keys = loadKeys();
+    if (!keys.groq && !keys.gemini) { setAiOpen(true); return; }
+    setAiBusy(true); setAiMsg("AI original text se match kar raha hai…");
+    try {
+      const r = await aiMatch(pdf, e, keys);
+      updateEdit(e.id, { style: r.style, ...(r.bg ? { bg: r.bg } : {}) });
+      setAiMsg("✓ Matched" + (r.note ? `: ${r.note}` : ""));
+    } catch (err) { setAiMsg(err instanceof Error ? err.message : "AI match failed"); }
+    finally { setAiBusy(false); }
+  };
   const changeCount = Object.values(edits).filter((e) => !e.pristine).length;
 
   return (
@@ -280,6 +296,7 @@ export function Editor() {
             <TB disabled={!h.past.length} onClick={() => { select(null); dispatch({ type: "undo" }); }} label="Undo"><Undo2 className="h-4 w-4" /></TB>
             <TB disabled={!h.future.length} onClick={() => { select(null); dispatch({ type: "redo" }); }} label="Redo"><Redo2 className="h-4 w-4" /></TB>
             <TB onClick={() => setFindOpen((v) => !v)} active={findOpen} label="Find & Replace"><Replace className="h-4 w-4" /></TB>
+            <TB onClick={() => setAiOpen(true)} label="AI settings (Groq / Gemini keys)"><Settings2 className="h-4 w-4" /></TB>
             <div className="ml-auto flex items-center gap-2">
               <span className="hidden text-xs text-muted-foreground md:inline">{changeCount} change{changeCount === 1 ? "" : "s"}</span>
               <button onClick={download} disabled={!!busy}
@@ -291,8 +308,14 @@ export function Editor() {
         )}
       </header>
       {pdf && selected && selected.kind !== "erase" && (
-        <FormatBar e={selected} onChange={(patch) => updateEdit(selected.id, patch)} onRemove={() => removeEdit(selected.id)} onClose={() => select(null)} />
+        <FormatBar e={selected} onChange={(patch) => updateEdit(selected.id, patch)} onRemove={() => removeEdit(selected.id)} onClose={() => select(null)} onAi={() => void runAi(selected)} aiBusy={aiBusy} />
       )}
+      {aiMsg && (
+        <div className="flex items-center gap-2 border-b border-border bg-accent px-3 py-1 text-xs text-accent-foreground">
+          <span className="flex-1">{aiMsg}</span><button onClick={() => setAiMsg(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
+      {aiOpen && <AiSettings onClose={() => setAiOpen(false)} />}
       {pdf && selected && selected.kind === "erase" && (
         <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-1.5 text-sm">
           <span className="flex-1 text-muted-foreground">Erased area</span>
@@ -381,7 +404,33 @@ function Landing({ onFile, onPick }: { onFile: (f: File) => void; onPick: () => 
   );
 }
 
-function FormatBar({ e, onChange, onRemove, onClose }: { e: Edit; onChange: (p: Patch) => void; onRemove: () => void; onClose: () => void }) {
+function AiSettings({ onClose }: { onClose: () => void }) {
+  const [k, setK] = useState<AiKeys>(() => loadKeys());
+  const inp = "h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4" onClick={onClose}>
+      <form className="w-full max-w-md space-y-3 rounded-lg bg-card p-4 shadow-lg" onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); saveKeys({ groq: k.groq?.trim() || undefined, gemini: k.gemini?.trim() || undefined, provider: k.provider }); onClose(); }}>
+        <h2 className="text-base font-semibold">AI Match settings</h2>
+        <p className="text-xs text-muted-foreground">Keys sirf isi browser me save hoti hain. AI Match dabane par sirf us text ka chhota crop AI ko bheja jata hai.</p>
+        <label className="block text-sm">GroqCloud key (gsk_…)
+          <input className={inp} type="password" placeholder="gsk_..." value={k.groq ?? ""} onChange={(e) => setK({ ...k, groq: e.target.value })} /></label>
+        <label className="block text-sm">Google Gemini key (AIza…)
+          <input className={inp} type="password" placeholder="AIza..." value={k.gemini ?? ""} onChange={(e) => setK({ ...k, gemini: e.target.value })} /></label>
+        <label className="block text-sm">Pehle kaun try kare
+          <select className={inp} value={k.provider ?? "groq"} onChange={(e) => setK({ ...k, provider: e.target.value as AiKeys["provider"] })}>
+            <option value="groq">GroqCloud (fast)</option><option value="gemini">Gemini</option>
+          </select></label>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="rounded-md border border-input px-3 py-1.5 text-sm">Cancel</button>
+          <button type="submit" className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground">Submit</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; onChange: (p: Patch) => void; onRemove: () => void; onClose: () => void; onAi: () => void; aiBusy: boolean }) {
   // keep the caret inside the text while pressing toggle buttons
   const keep = (ev: React.MouseEvent) => ev.preventDefault();
   const inp = "h-8 rounded-md border border-input bg-background px-1.5 text-sm";
@@ -409,6 +458,10 @@ function FormatBar({ e, onChange, onRemove, onClose }: { e: Edit; onChange: (p: 
           <option value="center">Center</option>
           <option value="right">Right</option>
         </select>
+      )}
+      {!e.isNew && (
+        <button onMouseDown={keep} onClick={onAi} disabled={aiBusy} aria-label="AI Match" title="AI se original jaisa style match karein"
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-primary/50 px-2 text-xs font-medium text-primary disabled:opacity-50"><Sparkles className="h-4 w-4" />{aiBusy ? "…" : "AI Match"}</button>
       )}
       <button onMouseDown={keep} onClick={onRemove} title={e.isNew ? "Delete text" : "Revert to original"} aria-label={e.isNew ? "Delete text" : "Revert to original"}
         className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-destructive/40 text-destructive"><Trash2 className="h-4 w-4" /></button>

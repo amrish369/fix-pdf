@@ -254,6 +254,11 @@ export function Editor() {
 
   const selected = selectedId ? edits[selectedId] : null;
   const [aiOpen, setAiOpen] = useState(false);
+  useEffect(() => {
+    const f = () => setAiOpen(true);
+    window.addEventListener("open-ai-settings", f);
+    return () => window.removeEventListener("open-ai-settings", f);
+  }, []);
   const [aiMsg, setAiMsg] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const runAi = async (e: Edit) => {

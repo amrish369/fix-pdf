@@ -5,13 +5,13 @@ import { screenBox } from "@/lib/pdf/geometry";
 export type Provider = "groq" | "gemini";
 const KEY = "docedit-ai-keys";
 
-export interface AiKeys { groq?: string; gemini?: string; provider?: Provider }
+export interface AiKeys { groq?: string | undefined; gemini?: string | undefined; provider?: Provider | undefined }
 export function loadKeys(): AiKeys {
   try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; }
 }
 export function saveKeys(k: AiKeys) { localStorage.setItem(KEY, JSON.stringify(k)); }
 
-export interface MatchResult { style: Partial<TextStyle>; bg?: string; note?: string }
+export interface MatchResult { style: Partial<TextStyle>; bg?: string | undefined; note?: string | undefined }
 
 /** Render only the original area of the page (without edits) and return a PNG data URL. */
 async function cropOriginal(pdf: PDFDocumentProxy, e: Edit): Promise<string> {

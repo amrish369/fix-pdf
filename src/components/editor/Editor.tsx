@@ -286,7 +286,6 @@ export function Editor() {
         <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void openFile(f); e.target.value = ""; }} />
         <TB onClick={() => fileInput.current?.click()} label="Open PDF"><Upload className="h-4 w-4" /></TB>
-        <TB onClick={() => setAiOpen(true)} label="AI settings (Groq / Gemini keys)"><Settings2 className="h-4 w-4" /></TB>
         {pdf && <TB onClick={() => { if (window.confirm("Close this document and discard saved edits?")) void startFresh(); }} label="Start fresh (close document)"><RotateCcw className="h-4 w-4" /></TB>}
         {pdf && (
           <>
@@ -405,10 +404,6 @@ function Landing({ onFile, onPick }: { onFile: (f: File) => void; onPick: () => 
           <Upload className="h-4 w-4" /> Choose PDF
         </button>
         <p className="mt-3 text-xs text-muted-foreground">or drag & drop it here</p>
-        <button type="button" onClick={() => window.dispatchEvent(new Event("open-ai-settings"))}
-          className="mt-4 inline-flex items-center gap-2 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-accent">
-          <Settings2 className="h-4 w-4" /> AI keys paste karein (Groq / Gemini)
-        </button>
       </div>
     </div>
   );

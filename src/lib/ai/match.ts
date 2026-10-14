@@ -12,7 +12,7 @@ export function loadKeys(): AiKeys {
 }
 export function saveKeys(k: AiKeys) { localStorage.setItem(KEY, JSON.stringify(k)); }
 
-export interface MatchResult { style: Partial<TextStyle>; bg?: string | undefined; note?: string | undefined }
+export interface MatchResult { style: Partial<TextStyle>; bg?: string | undefined; note?: string | undefined; score?: number | undefined }
 
 /** Render only the original area of the page (without edits) and return a PNG data URL. */
 async function cropOriginal(pdf: PDFDocumentProxy, e: Edit): Promise<string> {
@@ -40,7 +40,8 @@ function prompt(e: Edit) {
 The editor currently replaces it with "${e.text}" using this style: ${JSON.stringify({ ...e.style, bg: e.bg })} (size in PDF points).
 Detected font name: "${e.original?.fontName ?? "unknown"}".
 Look carefully at the image and return ONLY a JSON object, no prose, with the corrected style so the new text looks identical to the original:
-{"family":"sans|serif|mono","bold":true|false,"italic":true|false,"color":"#rrggbb text colour","bg":"#rrggbb background colour behind text","sizeAdjust":number between -1.5 and 1.5 (points to add to size),"note":"short reason"}`;
+Pay close attention to: stroke thickness (weight), edge softness/blur from scanning or printing, ink fading (opacity) and spacing between letters.
+{"family":"sans|serif|mono","weight":number 300-900 (400 regular, 500 medium, 600 semibold, 700 bold, 800 heavy),"bold":true|false,"blur":number 0-1.5 (edge softness in px, 0 for crisp vector text),"opacity":number 0.5-1 (ink strength),"letterSpacing":number -1 to 3 (extra points between letters, 0 normal),"score":number 0-100 (how identical the current style already is),"italic":true|false,"color":"#rrggbb text colour","bg":"#rrggbb background colour behind text","sizeAdjust":number between -1.5 and 1.5 (points to add to size),"note":"short reason"}`;
 }
 
 function parse(text: string, e: Edit): MatchResult {
@@ -53,9 +54,14 @@ function parse(text: string, e: Edit): MatchResult {
   if (typeof j.bold === "boolean") style.bold = j.bold;
   if (typeof j.italic === "boolean") style.italic = j.italic;
   const c = hex(j.color); if (c) style.color = c;
+  const num = (v: unknown, lo: number, hi: number) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : undefined; };
+  const wt = num(j.weight, 100, 900); if (wt !== undefined) { style.weight = Math.round(wt / 50) * 50; style.bold = style.weight >= 600; }
+  const bl = num(j.blur, 0, 1.5); if (bl !== undefined) style.blur = +bl.toFixed(2);
+  const op = num(j.opacity, 0.3, 1); if (op !== undefined) style.opacity = +op.toFixed(2);
+  const sp = num(j.letterSpacing, -1, 3); if (sp !== undefined) style.letterSpacing = +sp.toFixed(2);
   const adj = Number(j.sizeAdjust);
   if (Number.isFinite(adj) && Math.abs(adj) <= 1.5 && adj !== 0) style.size = +(e.style.size + adj).toFixed(2);
-  return { style, bg: hex(j.bg), note: typeof j.note === "string" ? j.note : undefined };
+  return { style, bg: hex(j.bg), note: typeof j.note === "string" ? j.note : undefined, score: num(j.score, 0, 100) };
 }
 
 async function callGroq(key: string, img: string, p: string) {

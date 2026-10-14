@@ -264,12 +264,13 @@ export function Editor() {
   const runAi = async (e: Edit) => {
     if (!pdf) return;
     const keys = loadKeys();
-    if (!keys.groq && !keys.gemini) { setAiOpen(true); return; }
     setAiBusy(true); setAiMsg("AI original text se match kar raha hai…");
     try {
       const r = await aiMatch(pdf, e, keys);
       updateEdit(e.id, { style: r.style, ...(r.bg ? { bg: r.bg } : {}) });
-      setAiMsg("✓ Matched" + (r.note ? `: ${r.note}` : ""));
+      const st = r.style;
+      const parts = [st.weight && `Motayi ${st.weight}`, st.blur !== undefined && `Softness ${st.blur}px`, st.opacity !== undefined && `Opacity ${Math.round(st.opacity * 100)}%`].filter(Boolean).join(" · ");
+      setAiMsg(`✓ Matched${r.score !== undefined ? ` (pehle ${Math.round(r.score)}% same tha)` : ""}${parts ? ` — ${parts}` : ""}${r.note ? `. ${r.note}` : ""}`);
     } catch (err) { setAiMsg(err instanceof Error ? err.message : "AI match failed"); }
     finally { setAiBusy(false); }
   };
@@ -453,8 +454,26 @@ function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; 
       </select>
       <input aria-label="Size (pt)" type="number" min={2} max={400} step={0.5} className={`${inp} w-16`} value={+e.style.size.toFixed(2)}
         onChange={(ev) => { const v = parseFloat(ev.target.value); if (v > 0) onChange({ style: { size: v } }); }} />
-      <button onMouseDown={keep} onClick={() => onChange({ style: { bold: !e.style.bold } })} aria-label="Bold" className={tg(e.style.bold)}><Bold className="h-4 w-4" /></button>
+      <button onMouseDown={keep} onClick={() => onChange({ style: { bold: !e.style.bold, weight: e.style.bold ? 400 : 700 } })} aria-label="Bold" className={tg(e.style.bold)}><Bold className="h-4 w-4" /></button>
       <button onMouseDown={keep} onClick={() => onChange({ style: { italic: !e.style.italic } })} aria-label="Italic" className={tg(e.style.italic)}><Italic className="h-4 w-4" /></button>
+      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Motayi (thickness)">Motayi
+        <select aria-label="Motayi" className={inp} value={e.style.weight ?? (e.style.bold ? 700 : 400)}
+          onChange={(ev) => { const w = +ev.target.value; onChange({ style: { weight: w, bold: w >= 600 } }); }}>
+          {[300, 400, 450, 500, 550, 600, 650, 700, 800, 900].map((w) => <option key={w} value={w}>{w}</option>)}
+        </select>
+      </label>
+      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Dhundhla-pan (softness)">Soft
+        <input aria-label="Softness" type="range" min={0} max={1.5} step={0.05} className="w-16" value={e.style.blur ?? 0}
+          onChange={(ev) => onChange({ style: { blur: +ev.target.value } })} />
+      </label>
+      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Ink opacity">Ink
+        <input aria-label="Opacity" type="range" min={0.3} max={1} step={0.01} className="w-16" value={e.style.opacity ?? 1}
+          onChange={(ev) => onChange({ style: { opacity: +ev.target.value } })} />
+      </label>
+      <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Letter spacing">Gap
+        <input aria-label="Letter spacing" type="number" min={-1} max={3} step={0.1} className={`${inp} w-14`} value={e.style.letterSpacing ?? 0}
+          onChange={(ev) => onChange({ style: { letterSpacing: +ev.target.value || 0 } })} />
+      </label>
       <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Text color">A
         <input type="color" aria-label="Text color" className="h-8 w-8 cursor-pointer rounded-md border border-input bg-background" value={e.style.color} onChange={(ev) => onChange({ style: { color: ev.target.value } })} />
       </label>

@@ -26,6 +26,10 @@ export interface TextStyle {
   italic: boolean;
   family: FontFamily;
   align: Align;
+  weight?: number; // 100-900 fine thickness; overrides bold when set
+  blur?: number; // softness in px at 100% zoom (0-1.5)
+  opacity?: number; // 0.3-1
+  letterSpacing?: number; // PDF points between characters
 }
 
 /** A baseline-anchored area of original glyphs that must be painted over. */

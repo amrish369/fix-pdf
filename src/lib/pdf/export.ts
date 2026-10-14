@@ -32,7 +32,8 @@ export async function exportPdf(original: Uint8Array, edits: Edits): Promise<Uin
   }
   const cache = new Map<string, PDFFont>();
   const font = async (e: Edit) => {
-    const idx = (e.style.bold ? 1 : 0) + (e.style.italic ? 2 : 0);
+    const w = e.style.weight ?? (e.style.bold ? 700 : 400);
+    const idx = (w >= 600 ? 1 : 0) + (e.style.italic ? 2 : 0);
     const name = FONT_MAP[e.style.family][idx];
     if (!cache.has(name)) cache.set(name, await doc.embedFont(name));
     return cache.get(name)!;
@@ -72,11 +73,35 @@ export async function exportPdf(original: Uint8Array, edits: Edits): Promise<Uin
     if (!e.text) continue;
     const f = await font(e);
     const text = sanitize(f, e.text);
-    const w = f.widthOfTextAtSize(text, e.style.size);
+    const size = e.style.size, ls = e.style.letterSpacing ?? 0;
+    const chars = [...text];
+    const w = f.widthOfTextAtSize(text, size) + ls * Math.max(0, chars.length - 1);
     let dx = 0;
     if (e.width && e.style.align === "center") dx = (e.width - w) / 2;
     if (e.width && e.style.align === "right") dx = e.width - w;
-    page.drawText(text, { ...at(dx, 0), size: e.style.size, font: f, color: toRgb(e.style.color), rotate: rot });
+    const color = toRgb(e.style.color);
+    const op = Math.min(1, Math.max(0.05, e.style.opacity ?? 1));
+    // Fine thickness: base font is regular (<600) or bold (>=600); extra weight = tiny horizontal re-strikes.
+    const wt = e.style.weight ?? (e.style.bold ? 700 : 400);
+    const base = wt >= 600 ? 700 : 400;
+    const extra = Math.max(0, wt - base) / 100; // 0..2
+    const thin = wt < base ? (base - wt) / 100 : 0; // lighter: reduce opacity a bit
+    const strikes: number[] = [0];
+    for (let i = 1; i <= Math.ceil(extra * 2); i++) strikes.push(Math.min(i, extra * 2) * size * 0.012);
+    // Softness: draw faint halo copies around the glyphs to emulate ink spread / blur.
+    const blur = (e.style.blur ?? 0) * 0.75; // points
+    const halo = blur > 0.05 ? [[blur, 0], [-blur, 0], [0, blur], [0, -blur]] : [];
+    const draw = (ox: number, oy: number, opacity: number) => {
+      if (!ls) { page.drawText(text, { ...at(dx + ox, oy), size, font: f, color, rotate: rot, opacity }); return; }
+      let cx = dx + ox;
+      for (const ch of chars) {
+        page.drawText(ch, { ...at(cx, oy), size, font: f, color, rotate: rot, opacity });
+        cx += f.widthOfTextAtSize(ch, size) + ls;
+      }
+    };
+    for (const [hx, hy] of halo) draw(hx, hy, op * 0.18);
+    const mainOp = op * (1 - Math.min(0.35, thin * 0.15)) * (blur > 0.05 ? 0.9 : 1);
+    for (const sx of strikes) draw(sx, 0, sx === 0 ? mainOp : mainOp * 0.85);
   }
   return doc.save();
 }

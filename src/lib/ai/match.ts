@@ -12,7 +12,7 @@ export function loadKeys(): AiKeys {
 }
 export function saveKeys(k: AiKeys) { localStorage.setItem(KEY, JSON.stringify(k)); }
 
-export interface MatchResult { style: Partial<TextStyle>; bg?: string | undefined; note?: string | undefined; score?: number | undefined }
+export interface MatchResult { style: Partial<TextStyle>; bg?: string | undefined; note?: string | undefined; score?: number | undefined; text?: string | undefined }
 
 /** Render only the original area of the page (without edits) and return a PNG data URL. */
 async function cropOriginal(pdf: PDFDocumentProxy, e: Edit): Promise<string> {
@@ -44,6 +44,14 @@ Pay close attention to: stroke thickness (weight), edge softness/blur from scann
 {"family":"sans|serif|mono","weight":number 300-900 (400 regular, 500 medium, 600 semibold, 700 bold, 800 heavy),"bold":true|false,"blur":number 0-1.5 (edge softness in px, 0 for crisp vector text),"opacity":number 0.5-1 (ink strength),"letterSpacing":number -1 to 3 (extra points between letters, 0 normal),"score":number 0-100 (how identical the current style already is),"italic":true|false,"color":"#rrggbb text colour","bg":"#rrggbb background colour behind text","sizeAdjust":number between -1.5 and 1.5 (points to add to size),"note":"short reason"}`;
 }
 
+function commandPrompt(e: Edit, cmd: string) {
+  return `You are an assistant inside a PDF editor. The image is a crop of the ORIGINAL PDF area around the text "${e.original?.str ?? e.text}".
+The editor currently draws the text "${e.text}" with style ${JSON.stringify({ ...e.style, bg: e.bg })} (size in PDF points).
+The user reports this problem / asks this (may be Hindi/Hinglish): "${cmd}"
+Fix exactly what the user asks, keeping everything else as it is. Return ONLY JSON with the fields you change (omit others):
+{"text":"new text only if user asks to change words","family":"sans|serif|mono","weight":300-900,"bold":bool,"italic":bool,"blur":0-1.5,"opacity":0.3-1,"letterSpacing":-1..3,"color":"#rrggbb","bg":"#rrggbb","size":absolute size in points,"sizeAdjust":-3..3,"note":"short reply in Hinglish"}`;
+}
+
 function parse(text: string, e: Edit): MatchResult {
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("AI ne valid answer nahi diya");
@@ -60,8 +68,9 @@ function parse(text: string, e: Edit): MatchResult {
   const op = num(j.opacity, 0.3, 1); if (op !== undefined) style.opacity = +op.toFixed(2);
   const sp = num(j.letterSpacing, -1, 3); if (sp !== undefined) style.letterSpacing = +sp.toFixed(2);
   const adj = Number(j.sizeAdjust);
-  if (Number.isFinite(adj) && Math.abs(adj) <= 1.5 && adj !== 0) style.size = +(e.style.size + adj).toFixed(2);
-  return { style, bg: hex(j.bg), note: typeof j.note === "string" ? j.note : undefined, score: num(j.score, 0, 100) };
+  if (Number.isFinite(adj) && Math.abs(adj) <= 3 && adj !== 0) style.size = +(e.style.size + adj).toFixed(2);
+  const abs = num(j.size, 1, 400); if (abs !== undefined) style.size = +abs.toFixed(2);
+  return { style, bg: hex(j.bg), text: typeof j.text === "string" ? j.text : undefined, note: typeof j.note === "string" ? j.note : undefined, score: num(j.score, 0, 100) };
 }
 
 async function callGroq(key: string, img: string, p: string) {
@@ -94,9 +103,9 @@ async function callGemini(key: string, img: string, p: string) {
   return j.candidates?.[0]?.content?.parts?.map((x: { text?: string }) => x.text ?? "").join("") ?? "";
 }
 
-export async function aiMatch(pdf: PDFDocumentProxy, e: Edit, keys: AiKeys): Promise<MatchResult> {
+export async function aiMatch(pdf: PDFDocumentProxy, e: Edit, keys: AiKeys, cmd?: string): Promise<MatchResult> {
   const img = await cropOriginal(pdf, e);
-  const p = prompt(e);
+  const p = cmd ? commandPrompt(e, cmd.slice(0, 500)) : prompt(e);
   let lastErr: unknown;
   // 1) Secure backend Groq (key stays on server)
   try {

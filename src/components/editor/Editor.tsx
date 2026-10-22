@@ -506,18 +506,30 @@ function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; 
           <option value="right">Right</option>
         </select>
       )}
-      {!e.isNew && (
-        <button onMouseDown={keep} onClick={() => onAi()} disabled={aiBusy} aria-label="AI Match" title="AI se original jaisa style match karein"
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-primary/50 px-2 text-xs font-medium text-primary disabled:opacity-50"><Sparkles className="h-4 w-4" />{aiBusy ? "…" : "AI Match"}</button>
-      )}
-      <form className="flex shrink-0 items-center gap-1" onSubmit={(ev) => { ev.preventDefault(); const f = new FormData(ev.currentTarget); const c = String(f.get("cmd") ?? "").trim(); if (c) { onAi(c); ev.currentTarget.reset(); } }}>
-        <input name="cmd" aria-label="AI se bolo" placeholder="AI se bolo: jaise 'thoda bold karo'" className={`${inp} w-52`} />
-        <button type="submit" disabled={aiBusy} className="h-8 rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground disabled:opacity-50">Fix</button>
-      </form>
       <button onMouseDown={keep} onClick={onRemove} title={e.isNew ? "Delete text" : "Revert to original"} aria-label={e.isNew ? "Delete text" : "Revert to original"}
         className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-destructive/40 text-destructive"><Trash2 className="h-4 w-4" /></button>
       <button onClick={onClose} aria-label="Done" className="ml-auto shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground">Done</button>
     </div>
+    {aiPop && (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/30 sm:items-center" onClick={() => setAiPop(false)}>
+        <div role="dialog" aria-label="AI Assistant" className="w-full max-w-md rounded-t-xl border border-border bg-card p-4 shadow-xl sm:rounded-xl" onClick={(ev) => ev.stopPropagation()}>
+          <div className="mb-2 flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-primary" /> AI Assistant
+            <button className="ml-auto" onClick={() => setAiPop(false)} aria-label="Close"><X className="h-4 w-4" /></button></div>
+          <p className="mb-2 truncate text-xs text-muted-foreground">Text: "{e.text}"</p>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {quick.map((q) => (
+              <button key={q.l} onClick={() => send(q.c)} className="rounded-full border border-primary/50 px-2.5 py-1 text-xs text-primary">{q.l}</button>
+            ))}
+          </div>
+          <form onSubmit={(ev) => { ev.preventDefault(); const c = cmd.trim(); if (c) send(c); }} className="flex flex-col gap-2">
+            <textarea autoFocus value={cmd} onChange={(ev) => setCmd(ev.target.value)} rows={3} aria-label="Apni dikkat likhein"
+              placeholder="Dikkat likhein, jaise: 'ye word aas-paas jaisa bold nahi lag raha'" className="rounded-md border border-input bg-background p-2 text-sm" />
+            <button type="submit" disabled={!cmd.trim()} className="h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-50">AI se Fix karao</button>
+          </form>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

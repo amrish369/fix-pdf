@@ -36,7 +36,21 @@ export async function loadPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
     else update(pw);
   };
   try {
-    return await task.promise;
+    const doc = await task.promise;
+    // Some generators write broken object streams; PDF.js then shows a blank page.
+    // If page 1 has no text, try a structural repair via pdf-lib and keep it if it has text.
+    try {
+      const tc = await (await doc.getPage(1)).getTextContent();
+      if (tc.items.length === 0) {
+        const { PDFDocument } = await import("pdf-lib");
+        const fixed = await (await PDFDocument.load(bytes, { ignoreEncryption: false })).save({ useObjectStreams: false });
+        const doc2 = await pdfjs.getDocument({ data: fixed, enableXfa: false, stopAtErrors: false }).promise;
+        const tc2 = await (await doc2.getPage(1)).getTextContent();
+        if (tc2.items.length > 0) { void doc.destroy(); return doc2; }
+        void doc2.destroy();
+      }
+    } catch { /* keep original */ }
+    return doc;
   } catch (e) {
     const name = (e as Error)?.name;
     if (name === "PasswordException") throw new Error("Password required to open this PDF.");

@@ -450,8 +450,23 @@ function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; 
   const keep = (ev: React.MouseEvent) => ev.preventDefault();
   const inp = "h-8 rounded-md border border-input bg-background px-1.5 text-sm";
   const tg = (on: boolean) => `grid h-8 w-8 shrink-0 place-items-center rounded-md border border-input ${on ? "bg-primary text-primary-foreground" : ""}`;
+  const [aiPop, setAiPop] = useState(false);
+  const [cmd, setCmd] = useState("");
+  const send = (c?: string) => { setAiPop(false); setCmd(""); onAi(c); };
+  const quick = [
+    ...(!e.isNew ? [{ l: "Match Original", c: undefined as string | undefined }] : []),
+    { l: "Thoda Bold", c: "thoda bold karo, original jaisi motayi" },
+    { l: "Thoda Patla", c: "thoda patla (kam bold) karo" },
+    { l: "Dhundhla-pan set karo", c: "aas-paas ke text jaisa dhundhla-pan (softness) aur ink opacity set karo" },
+    { l: "Size chhota", c: "size thoda chhota karo" },
+    { l: "Size bada", c: "size thoda bada karo" },
+    { l: "Rang match", c: "text ka rang original jaisa match karo" },
+  ];
   return (
+    <>
     <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border bg-card px-2 py-1.5 sm:px-3">
+      <button onMouseDown={keep} onClick={() => setAiPop(true)} disabled={aiBusy} aria-label="AI Assistant"
+        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"><Sparkles className="h-4 w-4" />{aiBusy ? "…" : "AI"}</button>
       <select aria-label="Font" className={inp} value={e.style.family} onChange={(ev) => onChange({ style: { family: ev.target.value as TextStyle["family"] } })}>
         <option value="sans">Sans</option>
         <option value="serif">Serif</option>

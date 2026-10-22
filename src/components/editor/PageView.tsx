@@ -159,14 +159,25 @@ export function PageView(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.pageIndex, editFromItems]);
 
-  const addTextAt = (clientX: number, clientY: number) => {
+  const addTextAt = (clientX: number, clientY: number, inherit = false) => {
     const el = overlayRef.current;
     if (!vt || !el) return;
     const r = el.getBoundingClientRect();
-    const [x, y] = apply(invert(vt), clientX - r.left, clientY - r.top);
+    let [x, y] = apply(invert(vt), clientX - r.left, clientY - r.top);
+    // Copy the style of the nearest text (same row first, e.g. table cells), so new data looks the same.
+    const items = itemsRef.current;
+    let ref: TextItemInfo | undefined;
+    if (items.length) {
+      const row = items.filter((it) => Math.abs(it.y - y) <= Math.max(it.size, 4) * 1.2);
+      const pool = row.length ? row : items;
+      ref = pool.reduce((a, b) => (Math.hypot(b.x - x, (b.y - y) * 3) < Math.hypot(a.x - x, (a.y - y) * 3) ? b : a));
+    }
+    if (ref && Math.abs(ref.y - y) <= Math.max(ref.size, 4) * 1.2) y = ref.y; // snap to row baseline
+    else y -= (ref?.size ?? 14) * 0.35;
+    const size = ref?.size ?? 14;
     p.onCreateEdit({
-      id: `new-${Date.now()}`, page: p.pageIndex, kind: "text", text: "New text",
-      style: { size: 14, color: "#111111", bold: false, italic: false, family: "sans", align: "left" },
+      id: `new-${Date.now()}`, page: p.pageIndex, kind: "text", text: inherit ? "" : "New text",
+      style: { size, color: ref?.color ?? "#111111", bold: !!ref?.bold, italic: !!ref?.italic, family: ref?.family ?? "sans", align: "left" },
       bg: "#ffffff", x, y, angle: 0, width: 0, isNew: true,
     });
   };
@@ -228,7 +239,11 @@ export function PageView(p: Props) {
   const clickBlank = (ev: React.MouseEvent<HTMLDivElement>) => {
     if (ev.target !== ev.currentTarget) return;
     if (p.mode === "add" && vt) { addTextAt(ev.clientX, ev.clientY); return; }
-    if (p.mode === "edit") p.onSelect(null);
+    if (p.mode === "edit" && vt) {
+      if (p.selectedId) { p.onSelect(null); return; }
+      primeKeyboard();
+      addTextAt(ev.clientX, ev.clientY, true);
+    }
   };
 
   const w = p.baseSize.w * p.scale, h = p.baseSize.h * p.scale;

@@ -261,13 +261,13 @@ export function Editor() {
   }, []);
   const [aiMsg, setAiMsg] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
-  const runAi = async (e: Edit) => {
+  const runAi = async (e: Edit, cmd?: string) => {
     if (!pdf) return;
     const keys = loadKeys();
-    setAiBusy(true); setAiMsg("AI original text se match kar raha hai…");
+    setAiBusy(true); setAiMsg(cmd ? `AI aapki baat par kaam kar raha hai: "${cmd}"…` : "AI original text se match kar raha hai…");
     try {
-      const r = await aiMatch(pdf, e, keys);
-      updateEdit(e.id, { style: r.style, ...(r.bg ? { bg: r.bg } : {}) });
+      const r = await aiMatch(pdf, e, keys, cmd);
+      updateEdit(e.id, { style: r.style, ...(r.bg ? { bg: r.bg } : {}), ...(r.text !== undefined ? { text: r.text } : {}) });
       const st = r.style;
       const parts = [st.weight && `Motayi ${st.weight}`, st.blur !== undefined && `Softness ${st.blur}px`, st.opacity !== undefined && `Opacity ${Math.round(st.opacity * 100)}%`].filter(Boolean).join(" · ");
       setAiMsg(`✓ Matched${r.score !== undefined ? ` (pehle ${Math.round(r.score)}% same tha)` : ""}${parts ? ` — ${parts}` : ""}${r.note ? `. ${r.note}` : ""}`);
@@ -313,7 +313,7 @@ export function Editor() {
         )}
       </header>
       {pdf && selected && selected.kind !== "erase" && (
-        <FormatBar e={selected} onChange={(patch) => updateEdit(selected.id, patch)} onRemove={() => removeEdit(selected.id)} onClose={() => select(null)} onAi={() => void runAi(selected)} aiBusy={aiBusy} />
+        <FormatBar e={selected} onChange={(patch) => updateEdit(selected.id, patch)} onRemove={() => removeEdit(selected.id)} onClose={() => select(null)} onAi={(cmd) => void runAi(selected, cmd)} aiBusy={aiBusy} />
       )}
       {aiMsg && (
         <div className="flex items-center gap-2 border-b border-border bg-accent px-3 py-1 text-xs text-accent-foreground">
@@ -435,7 +435,17 @@ function AiSettings({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; onChange: (p: Patch) => void; onRemove: () => void; onClose: () => void; onAi: () => void; aiBusy: boolean }) {
+function SizeInput({ value, onChange, className }: { value: number; onChange: (v: number) => void; className: string }) {
+  const [s, setS] = useState(String(+value.toFixed(2)));
+  useEffect(() => { if (parseFloat(s) !== +value.toFixed(2)) setS(String(+value.toFixed(2))); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <input aria-label="Size (pt)" type="text" inputMode="decimal" className={className} value={s}
+      onChange={(ev) => { const t = ev.target.value.replace(/[^0-9.]/g, ""); setS(t); const v = parseFloat(t); if (v >= 1 && v <= 400) onChange(v); }}
+      onBlur={() => setS(String(+value.toFixed(2)))} />
+  );
+}
+
+function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; onChange: (p: Patch) => void; onRemove: () => void; onClose: () => void; onAi: (cmd?: string) => void; aiBusy: boolean }) {
   // keep the caret inside the text while pressing toggle buttons
   const keep = (ev: React.MouseEvent) => ev.preventDefault();
   const inp = "h-8 rounded-md border border-input bg-background px-1.5 text-sm";
@@ -447,8 +457,7 @@ function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; 
         <option value="serif">Serif</option>
         <option value="mono">Mono</option>
       </select>
-      <input aria-label="Size (pt)" type="number" min={2} max={400} step={0.5} className={`${inp} w-16`} value={+e.style.size.toFixed(2)}
-        onChange={(ev) => { const v = parseFloat(ev.target.value); if (v > 0) onChange({ style: { size: v } }); }} />
+      <SizeInput key={e.id} value={e.style.size} className={`${inp} w-16`} onChange={(v) => onChange({ style: { size: v } })} />
       <button onMouseDown={keep} onClick={() => onChange({ style: { bold: !e.style.bold, weight: e.style.bold ? 400 : 700 } })} aria-label="Bold" className={tg(e.style.bold)}><Bold className="h-4 w-4" /></button>
       <button onMouseDown={keep} onClick={() => onChange({ style: { italic: !e.style.italic } })} aria-label="Italic" className={tg(e.style.italic)}><Italic className="h-4 w-4" /></button>
       <label className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="Motayi (thickness)">Motayi
@@ -483,9 +492,13 @@ function FormatBar({ e, onChange, onRemove, onClose, onAi, aiBusy }: { e: Edit; 
         </select>
       )}
       {!e.isNew && (
-        <button onMouseDown={keep} onClick={onAi} disabled={aiBusy} aria-label="AI Match" title="AI se original jaisa style match karein"
+        <button onMouseDown={keep} onClick={() => onAi()} disabled={aiBusy} aria-label="AI Match" title="AI se original jaisa style match karein"
           className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-primary/50 px-2 text-xs font-medium text-primary disabled:opacity-50"><Sparkles className="h-4 w-4" />{aiBusy ? "…" : "AI Match"}</button>
       )}
+      <form className="flex shrink-0 items-center gap-1" onSubmit={(ev) => { ev.preventDefault(); const f = new FormData(ev.currentTarget); const c = String(f.get("cmd") ?? "").trim(); if (c) { onAi(c); ev.currentTarget.reset(); } }}>
+        <input name="cmd" aria-label="AI se bolo" placeholder="AI se bolo: jaise 'thoda bold karo'" className={`${inp} w-52`} />
+        <button type="submit" disabled={aiBusy} className="h-8 rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground disabled:opacity-50">Fix</button>
+      </form>
       <button onMouseDown={keep} onClick={onRemove} title={e.isNew ? "Delete text" : "Revert to original"} aria-label={e.isNew ? "Delete text" : "Revert to original"}
         className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-destructive/40 text-destructive"><Trash2 className="h-4 w-4" /></button>
       <button onClick={onClose} aria-label="Done" className="ml-auto shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground">Done</button>

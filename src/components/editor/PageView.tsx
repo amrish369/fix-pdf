@@ -30,6 +30,8 @@ export type Mode = "edit" | "add" | "select" | "erase";
 
 export interface PageApi {
   selectItem: (id: string) => void;
+  /** Build (without selecting) an edit covering these original text runs. */
+  buildEdit: (ids: string[]) => Edit | null;
 }
 
 interface Props {
@@ -112,9 +114,9 @@ export function PageView(p: Props) {
     e.memberIds?.forEach((m) => hiddenIds.add(m));
   });
 
-  const editFromItems = useCallback((list: TextItemInfo[]) => {
+  const editFromItems = useCallback((list: TextItemInfo[], create = true): Edit | null => {
     const vtx = vtRef.current;
-    if (!vtx || !canvasRef.current || !list.length) return;
+    if (!vtx || !canvasRef.current || !list.length) return null;
     const ordered = [...list].sort((a, b) => (Math.abs(a.y - b.y) > 1.2 ? b.y - a.y : a.x - b.x));
     const head = ordered[0];
     const sampled = sampleColors(canvasRef.current, dprRef.current, vtx, head);
@@ -130,7 +132,7 @@ export function PageView(p: Props) {
       const gap = it.x - (prev.x + prev.width);
       text += sameLine && gap <= prev.size * 0.12 ? it.str : " " + it.str;
     });
-    p.onCreateEdit({
+    const made: Edit = {
       id: ordered.length > 1 ? `sel-${head.id}-${ordered.length}` : head.id,
       page: p.pageIndex,
       kind: "text",
@@ -143,7 +145,9 @@ export function PageView(p: Props) {
       memberIds: ordered.map((it) => it.id),
       isNew: false,
       pristine: true,
-    });
+    };
+    if (create) p.onCreateEdit(made);
+    return made;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.pageIndex, p.onCreateEdit]);
 
@@ -152,6 +156,10 @@ export function PageView(p: Props) {
       selectItem: (id) => {
         const it = itemsRef.current.find((i) => i.id === id);
         if (it) editFromItems([it]);
+      },
+      buildEdit: (ids) => {
+        const list = itemsRef.current.filter((i) => ids.includes(i.id));
+        return editFromItems(list, false);
       },
     };
     p.registerApi?.(p.pageIndex, api);

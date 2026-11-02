@@ -12,6 +12,8 @@ import { PageView, Thumb, type Mode, type PageApi } from "./PageView";
 import { PreviewDialog } from "./Preview";
 import { clearSession, loadSession, saveSession, type Session } from "@/lib/persist";
 import { BoxSelect, Eraser, RotateCcw, Sparkles, Settings2 } from "lucide-react";
+import { downloadAsImages, imageToPdf, isImageFile, srcTypeOf } from "@/lib/image";
+import { aiPageCommand } from "@/lib/ai/page";
 import { aiMatch, loadKeys, saveKeys, type AiKeys } from "@/lib/ai/match";
 
 type Patch = Omit<Partial<Edit>, "style"> & { style?: Partial<TextStyle> };
@@ -87,6 +89,14 @@ export function Editor() {
   const openFile = async (file: File) => {
     setError(null);
     if (file.size > MAX_BYTES) return setError("File is larger than 100 MB.");
+    if (isImageFile(file)) {
+      setBusy("Image khul rahi hai…");
+      try {
+        const pdfBytes = await imageToPdf(file);
+        await openBytes(pdfBytes, file.name, undefined, true);
+      } catch (e) { setError((e as Error).message); setBusy(null); }
+      return;
+    }
     await openBytes(new Uint8Array(await file.arrayBuffer()), file.name);
   };
 
@@ -96,7 +106,7 @@ export function Editor() {
     setPdf(null); setBytes(null); setItems({}); setSizes([]); dispatch({ type: "reset" }); setSelectedId(null);
   };
 
-  const openBytes = async (buf: Uint8Array, name: string, resume?: Session) => {
+  const openBytes = async (buf: Uint8Array, name: string, resume?: Session, fromImage = false) => {
     setError(null);
     setBusy(resume ? "Restoring your last session…" : "Opening PDF…");
     try {
@@ -130,7 +140,17 @@ export function Editor() {
           });
         }
       }
-      setScanned(isLikelyScanned(all, doc.numPages));
+      const isScan = isLikelyScanned(all, doc.numPages);
+      setScanned(isScan);
+      // Photos have no text layer: read the text automatically so it can be tapped and edited.
+      const ocrDone = resume?.edits && Object.keys(itemsRef.current).length;
+      if ((fromImage || (srcTypeOf(name) !== "pdf" && !ocrDone)) && isScan) {
+        for (let i = 0; i < doc.numPages; i++) {
+          const res = await ocrPage(doc, i, (p) => setBusy(`Image se text padh rahe hain: ${Math.round(p * 100)}%`)).catch(() => []);
+          setItems((prev) => ({ ...prev, [i]: [...(prev[i] ?? []).filter((x) => x.source !== "ocr"), ...res] }));
+        }
+        setScanned(false);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -274,6 +294,37 @@ export function Editor() {
     } catch (err) { setAiMsg(err instanceof Error ? err.message : "AI match failed"); }
     finally { setAiBusy(false); }
   };
+  const [pageAiOpen, setPageAiOpen] = useState(false);
+  const runPageAi = async (cmd: string) => {
+    const pg = currentPage;
+    const list = itemsRef.current[pg] ?? [];
+    const api = pageApis.current[pg];
+    if (!list.length || !api) { setAiMsg("Is page par abhi koi text nahi mila."); return; }
+    setAiBusy(true); setAiMsg(`AI poore page ${pg + 1} par kaam kar raha hai: "${cmd}"…`);
+    try {
+      const r = await aiPageCommand(list, cmd);
+      const next = stripPristine(editsRef.current);
+      let n = 0;
+      for (const c of r.changes) {
+        const owner = Object.values(next).find((e) => e.id === c.id || e.memberIds?.includes(c.id));
+        const base = owner ?? api.buildEdit([c.id]);
+        if (!base) continue;
+        next[base.id] = { ...base, ...(c.text !== undefined ? { text: c.text } : {}), style: { ...base.style, ...c.style }, pristine: false };
+        n++;
+      }
+      if (n) { select(null); dispatch({ type: "apply", edits: next, record: true }); }
+      setAiMsg(n ? `✓ AI ne ${n} jagah badlav kiya${r.note ? ` — ${r.note}` : ""}. Galat lage to Undo dabayein.` : `AI ko badalne layak kuch nahi mila${r.note ? ` — ${r.note}` : ""}`);
+    } catch (err) { setAiMsg(err instanceof Error ? err.message : "AI command failed"); }
+    finally { setAiBusy(false); }
+  };
+  const srcType = srcTypeOf(fileName);
+  const baseName = fileName.replace(/\.[a-z0-9]+$/i, "") + "-edited";
+  const saveAs = async (fmt: "pdf" | "png" | "jpeg") => {
+    if (!preview) return;
+    if (fmt === "pdf") downloadBytes(preview, baseName + ".pdf");
+    else { setBusy("Image bana rahe hain…"); try { await downloadAsImages(preview, baseName, fmt); } finally { setBusy(null); } }
+    setPreview(null);
+  };
   const changeCount = Object.values(edits).filter((e) => !e.pristine).length;
 
   return (
@@ -283,9 +334,9 @@ export function Editor() {
           <span className="grid h-7 w-7 place-items-center rounded bg-primary text-xs text-primary-foreground">DE</span>
           <span className="hidden sm:inline">DocEdit AI</span>
         </div>
-        <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="hidden"
+        <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void openFile(f); e.target.value = ""; }} />
-        <TB onClick={() => fileInput.current?.click()} label="Open PDF"><Upload className="h-4 w-4" /></TB>
+        <TB onClick={() => fileInput.current?.click()} label="Open PDF or image"><Upload className="h-4 w-4" /></TB>
         {pdf && <TB onClick={() => { if (window.confirm("Close this document and discard saved edits?")) void startFresh(); }} label="Start fresh (close document)"><RotateCcw className="h-4 w-4" /></TB>}
         {pdf && (
           <>
@@ -302,6 +353,8 @@ export function Editor() {
             <TB disabled={!h.past.length} onClick={() => { select(null); dispatch({ type: "undo" }); }} label="Undo"><Undo2 className="h-4 w-4" /></TB>
             <TB disabled={!h.future.length} onClick={() => { select(null); dispatch({ type: "redo" }); }} label="Redo"><Redo2 className="h-4 w-4" /></TB>
             <TB onClick={() => setFindOpen((v) => !v)} active={findOpen} label="Find & Replace"><Replace className="h-4 w-4" /></TB>
+            <button onClick={() => setPageAiOpen(true)} disabled={aiBusy} aria-label="AI se poore page me badlav"
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-primary/50 px-2 text-xs font-semibold text-primary disabled:opacity-50"><Sparkles className="h-4 w-4" />{aiBusy ? "…" : "AI Page"}</button>
             <div className="ml-auto flex items-center gap-2">
               <span className="hidden text-xs text-muted-foreground md:inline">{changeCount} change{changeCount === 1 ? "" : "s"}</span>
               <button onClick={download} disabled={!!busy}
@@ -320,6 +373,7 @@ export function Editor() {
           <span className="flex-1">{aiMsg}</span><button onClick={() => setAiMsg(null)} aria-label="Dismiss"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
+      {pageAiOpen && <PageAiDialog page={currentPage + 1} onClose={() => setPageAiOpen(false)} onSend={(c) => { setPageAiOpen(false); void runPageAi(c); }} />}
       {aiOpen && <AiSettings onClose={() => setAiOpen(false)} />}
       {pdf && selected && selected.kind === "erase" && (
         <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-1.5 text-sm">
@@ -349,7 +403,7 @@ export function Editor() {
         <PreviewDialog original={pdf} bytes={preview}
           pages={[...new Set(Object.values(stripPristine(edits)).map((e) => e.page))].sort((a, b) => a - b)}
           onClose={() => setPreview(null)}
-          onConfirm={() => { downloadBytes(preview, fileName.replace(/\.pdf$/i, "") + "-edited.pdf"); setPreview(null); }} />
+          primary={srcType} onConfirm={(fmt) => void saveAs(fmt)} />
       )}
       {!pdf ? (
         <Landing onFile={openFile} onPick={() => fileInput.current?.click()} />
@@ -398,10 +452,10 @@ function Landing({ onFile, onPick }: { onFile: (f: File) => void; onPick: () => 
       onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}>
       <div className={`w-full max-w-lg rounded-xl border-2 border-dashed bg-card p-10 text-center ${over ? "border-primary" : "border-border"}`}>
         <Type className="mx-auto h-10 w-10 text-primary" />
-        <h1 className="mt-4 text-2xl font-semibold tracking-tight">Edit the text inside any PDF</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Open a PDF, tap any text, change it, and download. Your file stays on your device — nothing is uploaded.</p>
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight">Edit the text inside any PDF or photo</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Open a PDF or image (JPG/PNG), tap any text, change it, and download. Your file stays on your device — nothing is uploaded.</p>
         <button onClick={onPick} className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-          <Upload className="h-4 w-4" /> Choose PDF
+          <Upload className="h-4 w-4" /> Choose PDF / Image
         </button>
         <p className="mt-3 text-xs text-muted-foreground">or drag & drop it here</p>
       </div>
@@ -431,6 +485,28 @@ function AiSettings({ onClose }: { onClose: () => void }) {
           <button type="submit" className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground">Submit</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function PageAiDialog({ page, onClose, onSend }: { page: number; onClose: () => void; onSend: (c: string) => void }) {
+  const [cmd, setCmd] = useState("");
+  const ex = ["Saare 2025 ko 2026 kar do", "Naam 'Ramesh' ko 'Suresh' kar do", "Total wali line bold kar do", "Date ko 15/10/2026 kar do"];
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/30 sm:items-center" onClick={onClose}>
+      <div role="dialog" aria-label="AI Page" className="w-full max-w-md rounded-t-xl border border-border bg-card p-4 shadow-xl sm:rounded-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center gap-2 font-semibold"><Sparkles className="h-4 w-4 text-primary" /> AI se bolo — poora page {page}
+          <button className="ml-auto" onClick={onClose} aria-label="Close"><X className="h-4 w-4" /></button></div>
+        <p className="mb-2 text-xs text-muted-foreground">Page me kahin bhi jo badalna ho, saaf shabdon me likhein. Tap karne ki zarurat nahi.</p>
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {ex.map((x) => <button key={x} onClick={() => setCmd(x)} className="rounded-full border border-primary/50 px-2.5 py-1 text-xs text-primary">{x}</button>)}
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); const c = cmd.trim(); if (c) onSend(c); }} className="flex flex-col gap-2">
+          <textarea autoFocus rows={3} value={cmd} onChange={(e) => setCmd(e.target.value)} aria-label="AI command"
+            placeholder="Jaise: 'Invoice number 1234 ko 5678 kar do'" className="rounded-md border border-input bg-background p-2 text-sm" />
+          <button type="submit" disabled={!cmd.trim()} className="h-9 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:opacity-50">AI se karao</button>
+        </form>
+      </div>
     </div>
   );
 }

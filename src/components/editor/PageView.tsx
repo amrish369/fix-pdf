@@ -30,6 +30,8 @@ export type Mode = "edit" | "add" | "select" | "erase";
 
 export interface PageApi {
   selectItem: (id: string) => void;
+  /** Build (without selecting) an edit covering these original text runs. */
+  buildEdit: (ids: string[]) => Edit | null;
 }
 
 interface Props {
@@ -112,9 +114,9 @@ export function PageView(p: Props) {
     e.memberIds?.forEach((m) => hiddenIds.add(m));
   });
 
-  const editFromItems = useCallback((list: TextItemInfo[]) => {
+  const editFromItems = useCallback((list: TextItemInfo[], create = true): Edit | null => {
     const vtx = vtRef.current;
-    if (!vtx || !canvasRef.current || !list.length) return;
+    if (!vtx || !canvasRef.current || !list.length) return null;
     const ordered = [...list].sort((a, b) => (Math.abs(a.y - b.y) > 1.2 ? b.y - a.y : a.x - b.x));
     const head = ordered[0];
     const sampled = sampleColors(canvasRef.current, dprRef.current, vtx, head);
@@ -130,7 +132,7 @@ export function PageView(p: Props) {
       const gap = it.x - (prev.x + prev.width);
       text += sameLine && gap <= prev.size * 0.12 ? it.str : " " + it.str;
     });
-    p.onCreateEdit({
+    const made: Edit = {
       id: ordered.length > 1 ? `sel-${head.id}-${ordered.length}` : head.id,
       page: p.pageIndex,
       kind: "text",
@@ -143,7 +145,9 @@ export function PageView(p: Props) {
       memberIds: ordered.map((it) => it.id),
       isNew: false,
       pristine: true,
-    });
+    };
+    if (create) p.onCreateEdit(made);
+    return made;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.pageIndex, p.onCreateEdit]);
 
@@ -152,6 +156,10 @@ export function PageView(p: Props) {
       selectItem: (id) => {
         const it = itemsRef.current.find((i) => i.id === id);
         if (it) editFromItems([it]);
+      },
+      buildEdit: (ids) => {
+        const list = itemsRef.current.filter((i) => ids.includes(i.id));
+        return editFromItems(list, false);
       },
     };
     p.registerApi?.(p.pageIndex, api);
@@ -164,21 +172,36 @@ export function PageView(p: Props) {
     if (!vt || !el) return;
     const r = el.getBoundingClientRect();
     let [x, y] = apply(invert(vt), clientX - r.left, clientY - r.top);
-    // Copy the style of the nearest text (same row first, e.g. table cells), so new data looks the same.
+    // Copy the style of the nearest text on the same line (original words AND words already edited),
+    // so the new word follows the previous word exactly: baseline, size, font, weight, colour, softness.
     const items = itemsRef.current;
     let ref: TextItemInfo | undefined;
+    const rowOf = (yy: number, sz: number) => Math.abs(yy - y) <= Math.max(sz, 4) * 1.2;
     if (items.length) {
-      const row = items.filter((it) => Math.abs(it.y - y) <= Math.max(it.size, 4) * 1.2);
+      const row = items.filter((it) => rowOf(it.y, it.size));
       const pool = row.length ? row : items;
       ref = pool.reduce((a, b) => (Math.hypot(b.x - x, (b.y - y) * 3) < Math.hypot(a.x - x, (a.y - y) * 3) ? b : a));
     }
-    if (ref && Math.abs(ref.y - y) <= Math.max(ref.size, 4) * 1.2) y = ref.y; // snap to row baseline
+    const rowEdits = Object.values(p.edits).filter((e) => e.page === p.pageIndex && e.kind !== "erase" && e.text.trim() && rowOf(e.y, e.style.size));
+    const refEdit = rowEdits.length
+      ? rowEdits.reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a))
+      : undefined;
+    const useEdit = refEdit && (!ref || !rowOf(ref.y, ref.size) || Math.abs(refEdit.x - x) <= Math.abs(ref.x - x));
+    if (useEdit) y = refEdit.y;
+    else if (ref && rowOf(ref.y, ref.size)) y = ref.y; // snap to row baseline
     else y -= (ref?.size ?? 14) * 0.35;
     const size = ref?.size ?? 14;
+    const style = useEdit
+      ? { ...refEdit.style, align: "left" as const }
+      : { size, color: ref?.color ?? "#111111", bold: !!ref?.bold, italic: !!ref?.italic, family: ref?.family ?? "sans", align: "left" as const };
+    let bg = useEdit ? refEdit.bg : "#ffffff";
+    if (!useEdit && canvasRef.current) {
+      const sx = clientX - r.left, sy = clientY - r.top, s = style.size * p.scale;
+      try { bg = sampleRectBg(canvasRef.current, dprRef.current, { left: sx - s, top: sy - s * 0.8, width: s * 2, height: s * 1.2 }); } catch { /* keep white */ }
+    }
     p.onCreateEdit({
       id: `new-${Date.now()}`, page: p.pageIndex, kind: "text", text: inherit ? "" : "New text",
-      style: { size, color: ref?.color ?? "#111111", bold: !!ref?.bold, italic: !!ref?.italic, family: ref?.family ?? "sans", align: "left" },
-      bg: "#ffffff", x, y, angle: 0, width: 0, isNew: true,
+      style, bg, x, y, angle: 0, width: 0, isNew: true,
     });
   };
 

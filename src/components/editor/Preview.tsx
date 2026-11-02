@@ -23,16 +23,19 @@ function PageCanvas({ pdf, pageIndex, width }: { pdf: PDFDocumentProxy; pageInde
   return <canvas ref={ref} className="w-full bg-card ring-1 ring-border" />;
 }
 
+const LABEL = { pdf: "PDF", jpeg: "JPG", png: "PNG" } as const;
+
 interface Props {
   original: PDFDocumentProxy;
   bytes: Uint8Array;
   pages: number[];
-  onConfirm: () => void;
+  primary: "pdf" | "png" | "jpeg";
+  onConfirm: (fmt: "pdf" | "png" | "jpeg") => void;
   onClose: () => void;
 }
 
 /** Side-by-side check of every changed page before the file is written to disk. */
-export function PreviewDialog({ original, bytes, pages, onConfirm, onClose }: Props) {
+export function PreviewDialog({ original, bytes, pages, primary, onConfirm, onClose }: Props) {
   const [edited, setEdited] = useState<PDFDocumentProxy | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -44,13 +47,16 @@ export function PreviewDialog({ original, bytes, pages, onConfirm, onClose }: Pr
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-sm">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <h2 className="text-sm font-semibold">Before & after — {pages.length} changed page{pages.length === 1 ? "" : "s"}</h2>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <button onClick={onClose} className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-accent">Back to editor</button>
-          <button onClick={onConfirm} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            <Download className="h-4 w-4" /> Confirm & download
+          <button onClick={() => onConfirm(primary)} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            <Download className="h-4 w-4" /> Download {LABEL[primary]}
           </button>
+          {(["pdf", "jpeg", "png"] as const).filter((f) => f !== primary).map((f) => (
+            <button key={f} onClick={() => onConfirm(f)} className="rounded-md border border-input px-2.5 py-1.5 text-sm hover:bg-accent">{LABEL[f]}</button>
+          ))}
           <button onClick={onClose} aria-label="Close preview" className="grid h-8 w-8 place-items-center rounded-md hover:bg-accent"><X className="h-4 w-4" /></button>
         </div>
       </div>

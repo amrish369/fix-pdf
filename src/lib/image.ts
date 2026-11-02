@@ -49,7 +49,7 @@ export async function downloadAsImages(pdfBytes: Uint8Array, baseName: string, t
     for (let i = 0; i < doc.numPages; i++) {
       const page = await doc.getPage(i + 1);
       const base = page.getViewport({ scale: 1 });
-      const vp = page.getViewport({ scale: Math.min(3, 2400 / Math.max(base.width, base.height)) * 1.5 > 1 ? Math.min(3, 3000 / Math.max(base.width, base.height)) : 1 });
+      const vp = page.getViewport({ scale: Math.max(1, Math.min(3, 3000 / Math.max(base.width, base.height))) });
       const c = document.createElement("canvas");
       c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
       const ctx = c.getContext("2d")!;

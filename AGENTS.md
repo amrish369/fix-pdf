@@ -16,3 +16,5 @@
 - Text runs are merged into phrases (src/lib/pdf/group.ts) and multi-run edits carry `covers`/`memberIds` — why: PDFs split text into fragments; one tap should select a whole phrase.
 - Work-in-progress (PDF bytes + edits) auto-saves to IndexedDB (src/lib/persist.ts) — why: survive refresh without uploading anything.
 - Download first exports, then shows a before/after preview of the real exported file — why: what you see is exactly what gets saved.
+- Images (JPG/PNG/WebP) are wrapped into a one-page PDF on open and auto-OCR'd; download offers PDF/JPG/PNG with the uploaded format first — why: one shared edit/export pipeline.
+- Groq calls use a model the saved key can access (check /openai/v1/models) — why: the key has no Llama vision models.

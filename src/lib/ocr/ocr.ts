@@ -40,7 +40,13 @@ export async function ocrPage(
           const text = line.text.trim();
           if (!text) continue;
           const { x0, y1, x1 } = line.bbox;
-          const hPx = (line.rowAttributes?.rowHeight ?? line.bbox.y1 - line.bbox.y0) * 0.8;
+          const rawH = (line.rowAttributes?.rowHeight ?? line.bbox.y1 - line.bbox.y0) * 0.8;
+          // Fit size to the measured line width, so the new text is exactly as wide as the photo's text.
+          const mctx = canvas.getContext("2d")!;
+          mctx.font = "100px Helvetica, Arial, sans-serif";
+          const unit = mctx.measureText(text).width / 100;
+          const fit = unit > 0 ? (x1 - x0) / unit : rawH;
+          const hPx = Math.min(rawH * 1.8, Math.max(rawH * 0.7, fit));
           const baselineY = line.baseline?.y0 ?? y1;
           const [px, py] = vp.convertToPdfPoint(x0, baselineY);
           items.push({

@@ -1,10 +1,10 @@
 import type { TextItemInfo, TextStyle } from "@/lib/pdf/types";
 import { groqPageCommand } from "./page.functions";
 
-export interface PageChange { id: string; text?: string; style: Partial<TextStyle> }
+export interface PageChange { id: string; text?: string | undefined; style: Partial<TextStyle> }
 
 /** Ask AI which text blocks on the page to change for a plain-language command. */
-export async function aiPageCommand(items: TextItemInfo[], cmd: string): Promise<{ changes: PageChange[]; note?: string }> {
+export async function aiPageCommand(items: TextItemInfo[], cmd: string): Promise<{ changes: PageChange[]; note?: string | undefined }> {
   const list = items.slice(0, 600).map((it) => ({ id: it.id, t: it.str, x: Math.round(it.x), y: Math.round(it.y), s: +it.size.toFixed(1), b: it.bold || undefined }));
   const prompt = `You edit a PDF page. Text blocks on the page (y grows upward, so higher y = higher on page):
 ${JSON.stringify(list)}
@@ -16,7 +16,8 @@ Only include fields that change. Use exact ids from the list.`;
   if (!res.ok) throw new Error(res.error);
   const m = res.text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("AI ne valid answer nahi diya");
-  const j = JSON.parse(m[0]) as { changes?: Record<string, unknown>[]; note?: string };
+  type C = { id?: unknown; text?: unknown; bold?: unknown; italic?: unknown; color?: unknown; size?: unknown };
+  const j = JSON.parse(m[0]) as { changes?: C[]; note?: string };
   const ids = new Set(items.map((i) => i.id));
   const changes: PageChange[] = [];
   for (const c of j.changes ?? []) {

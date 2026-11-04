@@ -16,7 +16,8 @@ Only include fields that change. Use exact ids from the list.`;
   if (!res.ok) throw new Error(res.error);
   const m = res.text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("AI ne valid answer nahi diya");
-  const j = JSON.parse(m[0]) as { changes?: Record<string, unknown>[]; note?: string };
+  type C = { id?: unknown; text?: unknown; bold?: unknown; italic?: unknown; color?: unknown; size?: unknown };
+  const j = JSON.parse(m[0]) as { changes?: C[]; note?: string };
   const ids = new Set(items.map((i) => i.id));
   const changes: PageChange[] = [];
   for (const c of j.changes ?? []) {

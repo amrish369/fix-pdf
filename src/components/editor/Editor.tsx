@@ -11,7 +11,7 @@ import type { Edit, Edits, TextItemInfo, TextStyle } from "@/lib/pdf/types";
 import { PageView, Thumb, type Mode, type PageApi } from "./PageView";
 import { PreviewDialog } from "./Preview";
 import { clearSession, loadSession, saveSession, type Session } from "@/lib/persist";
-import { BoxSelect, Eraser, RotateCcw, Sparkles, Settings2 } from "lucide-react";
+import { BoxSelect, Eraser, RotateCcw, RotateCw, Sparkles, Settings2 } from "lucide-react";
 import { downloadAsImages, imageToPdf, isImageFile, srcTypeOf } from "@/lib/image";
 import { aiPageCommand } from "@/lib/ai/page";
 import { aiMatch, loadKeys, saveKeys, type AiKeys } from "@/lib/ai/match";
@@ -234,6 +234,36 @@ export function Editor() {
     }
   };
 
+  /** Rotate the current page 90° clockwise (saved into the PDF), then re-read its text in the new orientation. */
+  const rotatePage = async () => {
+    if (!bytes) return;
+    const pg = currentPage;
+    const hadOcr = (items[pg] ?? []).some((i) => i.source === "ocr") || scanned;
+    setBusy("Page ghuma rahe hain…");
+    try {
+      const { PDFDocument, degrees } = await import("pdf-lib");
+      const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+      const page = doc.getPage(pg);
+      page.setRotation(degrees((((page.getRotation().angle + 90) % 360) + 360) % 360));
+      const out = await doc.save();
+      const keep = stripPristine(editsRef.current);
+      void pdf?.loadingTask.destroy();
+      await openBytes(out, fileName, { bytes: out.buffer as ArrayBuffer, fileName, edits: keep, scale, currentPage: pg, savedAt: Date.now() } as Session);
+      if (hadOcr) {
+        const d2 = await loadPdf(out);
+        const res = await ocrPage(d2, pg, (p) => setBusy(`Ghumaye page ka text padh rahe hain: ${Math.round(p * 100)}%`)).catch(() => []);
+        void d2.destroy();
+        setItems((prev) => ({ ...prev, [pg]: [...(prev[pg] ?? []).filter((x) => x.source !== "ocr"), ...res] }));
+        setScanned(false);
+      }
+      setCurrentPage(pg);
+    } catch (e) {
+      setError("Rotate failed: " + (e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const runOcr = async () => {
     if (!pdf) return;
     setBusy("OCR: loading engine…");
@@ -353,6 +383,7 @@ export function Editor() {
             <TB disabled={!h.past.length} onClick={() => { select(null); dispatch({ type: "undo" }); }} label="Undo"><Undo2 className="h-4 w-4" /></TB>
             <TB disabled={!h.future.length} onClick={() => { select(null); dispatch({ type: "redo" }); }} label="Redo"><Redo2 className="h-4 w-4" /></TB>
             <TB onClick={() => setFindOpen((v) => !v)} active={findOpen} label="Find & Replace"><Replace className="h-4 w-4" /></TB>
+            <TB disabled={!!busy} onClick={() => void rotatePage()} label={`Rotate page ${currentPage + 1}`}><RotateCw className="h-4 w-4" /></TB>
             <button onClick={() => setPageAiOpen(true)} disabled={aiBusy} aria-label="AI se poore page me badlav"
               className="inline-flex h-8 items-center gap-1 rounded-md border border-primary/50 px-2 text-xs font-semibold text-primary disabled:opacity-50"><Sparkles className="h-4 w-4" />{aiBusy ? "…" : "AI Page"}</button>
             <div className="ml-auto flex items-center gap-2">

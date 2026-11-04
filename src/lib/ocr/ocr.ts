@@ -57,7 +57,8 @@ export async function ocrPage(
             y: py,
             width: (x1 - x0) / scale,
             size: Math.max(4, hPx / scale),
-            angle: 0,
+            // On a rotated page, screen-horizontal text runs along the rotated page axis.
+            angle: ((page.rotate || 0) * Math.PI) / 180,
             fontName: "ocr",
             family: "sans",
             bold: false,

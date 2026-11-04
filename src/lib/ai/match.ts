@@ -78,7 +78,7 @@ async function callGroq(key: string, img: string, p: string) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      model: "qwen/qwen3.8-27b",
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [{ role: "user", content: [{ type: "text", text: p }, { type: "image_url", image_url: { url: img } }] }],

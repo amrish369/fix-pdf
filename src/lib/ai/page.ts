@@ -1,10 +1,10 @@
 import type { TextItemInfo, TextStyle } from "@/lib/pdf/types";
 import { groqPageCommand } from "./page.functions";
 
-export interface PageChange { id: string; text?: string; style: Partial<TextStyle> }
+export interface PageChange { id: string; text?: string | undefined; style: Partial<TextStyle> }
 
 /** Ask AI which text blocks on the page to change for a plain-language command. */
-export async function aiPageCommand(items: TextItemInfo[], cmd: string): Promise<{ changes: PageChange[]; note?: string }> {
+export async function aiPageCommand(items: TextItemInfo[], cmd: string): Promise<{ changes: PageChange[]; note?: string | undefined }> {
   const list = items.slice(0, 600).map((it) => ({ id: it.id, t: it.str, x: Math.round(it.x), y: Math.round(it.y), s: +it.size.toFixed(1), b: it.bold || undefined }));
   const prompt = `You edit a PDF page. Text blocks on the page (y grows upward, so higher y = higher on page):
 ${JSON.stringify(list)}
